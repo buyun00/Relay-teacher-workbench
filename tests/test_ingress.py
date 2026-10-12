@@ -156,5 +156,55 @@ class DesktopIngressCase(unittest.TestCase):
             thread.join(timeout=5)
 
 
+    def test_http_chat_auth_workspace_idempotency_and_sse_replay(self):
+        import threading
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        server = IngressServer(("127.0.0.1", 0), self.receiver, "fictional-only-token")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = "http://127.0.0.1:" + str(server.server_port)
+        def call(route, payload=None):
+            headers = {"Authorization": "Bearer fictional-only-token"}
+            if payload is not None:
+                headers["Content-Type"] = "application/json"
+            with urlopen(Request(endpoint + route, data=json.dumps(payload).encode() if payload is not None else None, headers=headers), timeout=5) as response:
+                return json.load(response)
+        try:
+            with self.assertRaises(HTTPError) as wrong:
+                call("/v1/chats", {"id": "fictional-http", "workspace_id": "fictional-wrong-space"})
+            self.assertEqual(wrong.exception.code, 409)
+            wrong.exception.close()
+            self.assertEqual(call("/v1/chats")["chats"], [])
+            with self.assertRaises(HTTPError) as auth:
+                urlopen(endpoint + "/v1/chat-models", timeout=5)
+            self.assertEqual(auth.exception.code, 401)
+            auth.exception.close()
+            view = call("/v1/chats", {"id": "fictional-http", "workspace_id": "fictional-demo"})
+            self.assertEqual(view["chat"]["route_state"], "triage")
+            body = {"id": "fictional-http-turn", "content": "虚构课堂消息", "workspace_id": "fictional-demo"}
+            first = call("/v1/chats/fictional-http/turns", body)
+            repeated = call("/v1/chats/fictional-http/turns", body)
+            self.assertEqual(first["id"], repeated["id"])
+            server.chats.delta(first["id"], "虚构增量输出")
+            request = Request(endpoint + "/v1/chats/fictional-http/events?after=0", headers={"Authorization": "Bearer fictional-only-token"})
+            with urlopen(request, timeout=5) as response:
+                self.assertIn("text/event-stream", response.headers["Content-Type"])
+                seen = []
+                while len(seen) < 2:
+                    line = response.readline().decode()
+                    if line.startswith("data: "):
+                        seen.append(json.loads(line[6:]))
+                self.assertEqual(seen[0]["kind"], "turn")
+                self.assertEqual(seen[1]["payload"]["text"], "虚构增量输出")
+            stopped = call("/v1/chats/fictional-http/cancel", {"workspace_id": "fictional-demo"})
+            self.assertEqual(stopped["turns"][0]["state"], "cancelled")
+            self.assertEqual(stopped["turns"][0]["answer"], "虚构增量输出")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(5)
+
+
 if __name__ == "__main__":
     unittest.main()

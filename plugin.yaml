@@ -1,5 +1,5 @@
 name: teacher-workbench
-version: 0.1.2
+version: 0.1.3
 description: 教师资料导入、证据复盘、成绩统计、人工更正、跨课次查询与备课。
 author: buyun00
 provides_tools:

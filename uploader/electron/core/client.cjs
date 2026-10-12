@@ -10,6 +10,7 @@ const {
   normalizeEndpoint,
 } = require("./transport.cjs");
 const { windowsVolumes } = require("./volumes.cjs");
+const { ChatTransport } = require("./chat.cjs");
 
 class ClassroomClient extends EventEmitter {
   constructor(root, options = {}) {
@@ -40,6 +41,8 @@ class ClassroomClient extends EventEmitter {
       state: "unconfigured",
       detail: "设置公开的 GitHub 更新仓库后启用自动更新",
     };
+    this.chat = new ChatTransport(this.db, () => this.config(), () => this.token(),
+      () => this.changed(), (view) => this.emit("chat", view), options.fetcher);
   }
   config() {
     return {
@@ -103,6 +106,7 @@ class ClassroomClient extends EventEmitter {
       this.db.log("连接设置已保存");
     });
     if (targetChanged) {
+      this.chat.reset();
       this.transport.stop();
       this.transport.connection = {
         state: "unconfigured",
@@ -112,6 +116,7 @@ class ClassroomClient extends EventEmitter {
       this.transport.nextStatusAt = 0;
     }
     this.changed();
+    if (this.config().endpoint) void this.chat.sync().catch(() => {});
     return this.config();
   }
   async bind(root, name) {
@@ -220,13 +225,30 @@ class ClassroomClient extends EventEmitter {
     this.changed();
     return task;
   }
+  async readChat(id) {
+    const view = await this.chat.read(id);
+    const tasks = this.db.setting("localTasks", []);
+    const task = tasks.find((t) => t.id === id);
+    if (task && view.connection === "online") {
+      task.chatScope = this.chat.scope();
+      this.db.setSetting("localTasks", tasks);
+      this.changed();
+    }
+    return view;
+  }
   saveTaskDraft({ id, draft }) {
     if (typeof draft !== "string") throw new Error("消息草稿无效");
     const tasks = this.db.setting("localTasks", []);
-    const task = tasks.find((item) => item.id === id);
-    if (!task) throw new Error("任务不存在");
+    let task = tasks.find((item) => item.id === id);
+    if (!task) {
+      const remote = this.chat.tasks().find((item) => item.id === id);
+      if (!remote) throw new Error("任务不存在");
+      task = { id, title: remote.title, draft: "", createdAt: remote.created_at, updatedAt: iso() };
+      tasks.push(task);
+    }
     task.draft = draft;
-    task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
+    if (!this.chat.tasks().find((t) => t.id === id))
+      task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
     task.updatedAt = iso();
     this.db.setSetting("localTasks", tasks);
     this.changed();
@@ -251,6 +273,10 @@ class ClassroomClient extends EventEmitter {
       }, 120000),
     );
     if (this.config().endpoint) void this.transport.health();
+    if (this.config().endpoint) void this.chat.sync().catch(() => {});
+    this.timers.push(setInterval(() => {
+      if (this.config().endpoint) void this.chat.sync().catch(() => {});
+    }, 15000));
   }
   pause(paused) {
     this.db.setSetting("pauseUploads", !!paused);
@@ -259,10 +285,15 @@ class ClassroomClient extends EventEmitter {
   }
   snapshot() {
     const config = this.config();
+    const local = this.db.setting("localTasks", []).filter((t) => !t.chatScope || t.chatScope === this.chat.scope());
+    const remote = this.chat.tasks();
+    const tasks = [...local.map((t) => ({ ...t, ...remote.find((r) => r.id === t.id), draft: t.draft })),
+      ...remote.filter((r) => !local.some((t) => t.id === r.id)).map((r) => ({ ...r, draft: "", createdAt: r.created_at, updatedAt: r.updated_at }))];
     return {
       mode: "desktop",
       version: this.version,
-      tasks: this.db.setting("localTasks", []),
+      tasks,
+      chatModels: this.chat.models.length ? this.chat.models : this.db.setting("chatModels:" + this.chat.scope(), []),
       deviceState: this.deviceState,
       config,
       dataDir: this.db.root,
@@ -313,6 +344,7 @@ class ClassroomClient extends EventEmitter {
     this.timers.forEach(clearInterval);
     this.importer.stop();
     this.transport.shutdown();
+    await this.chat.close();
     // Let active I/O unwind before closing SQLite.
     while (
       this.importer.scanning ||

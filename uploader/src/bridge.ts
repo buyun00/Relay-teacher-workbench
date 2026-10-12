@@ -1,4 +1,4 @@
-import type { ClientAPI, Recording, Snapshot } from "./types";
+import type { ChatView, ClientAPI, Recording, Snapshot } from "./types";
 
 function browserPreview(): ClientAPI {
   const date = "2026-10-12";
@@ -42,6 +42,12 @@ function browserPreview(): ClientAPI {
     mode: "preview",
     version: "0.1.0",
     tasks: [],
+    chatModels: [
+      { id: "deepseek-flash", label: "DeepSeek Flash", purpose: "日常沟通、资料整理" },
+      { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", purpose: "写作与教学文字" },
+      { id: "gpt-6-sol", label: "GPT-6 Sol", purpose: "制作功能与代码" },
+      { id: "gpt-6-astra", label: "GPT-6 Astra", purpose: "数学推理与复杂备课" },
+    ],
     deviceState: "ready",
     dataDir: "浏览器预览 · 不保存真实录音",
     config: {
@@ -117,6 +123,20 @@ function browserPreview(): ClientAPI {
     ],
   };
   const listeners = new Set<(snapshot: Snapshot) => void>();
+  const chatListeners = new Set<(view: ChatView) => void>();
+  const chats = new Map<string, ChatView>();
+  const timers = new Map<string, ReturnType<typeof setInterval>>();
+  const chatEmit = (view: ChatView) => chatListeners.forEach((fn) => fn(structuredClone(view)));
+  const chatView = (id: string): ChatView => {
+    let view = chats.get(id);
+    if (!view) {
+      view = { chat: { id, title: "新任务", hermes_session_id: "fictional-" + id,
+        native_tip: "fictional-" + id, route_state: "triage", model_id: null, route_reason: null },
+        turns: [], events: [], cursor: 0, workspace_id: "fictional-demo", connection: "online" };
+      chats.set(id, view);
+    }
+    return view;
+  };
   let manualDemo = 100;
   const emit = () => listeners.forEach((fn) => fn(structuredClone(state)));
   const log = (message: string) => {
@@ -165,9 +185,61 @@ function browserPreview(): ClientAPI {
       const task = state.tasks.find((item) => item.id === id);
       if (!task) throw new Error("任务不存在");
       task.draft = draft;
-      task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
+      if (!chats.get(id)?.turns.length) task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
       task.updatedAt = new Date().toISOString();
       emit();
+    },
+    async readChat(id) { return structuredClone(chatView(id)); },
+    async openLink(url) { window.open(url, "_blank", "noopener,noreferrer"); },
+    async copyText(value) { await navigator.clipboard.writeText(value); },
+    subscribeChat(fn) { chatListeners.add(fn); return () => { chatListeners.delete(fn); }; },
+    async selectChatModel({ id, modelId }) {
+      const view = chatView(id);
+      view.chat.model_id = modelId === "auto" ? null : modelId;
+      view.chat.route_state = modelId === "auto" ? "triage" : "locked";
+      view.chat.route_reason = modelId === "auto" ? "演示：DS 将了解需求" : "演示：你手动选择了模型";
+      chatEmit(view);
+      return structuredClone(view);
+    },
+    async cancelChat(id) {
+      clearInterval(timers.get(id)); timers.delete(id);
+      const view = chatView(id), turn = view.turns.at(-1);
+      if (turn) turn.state = "cancelled";
+      const task = state.tasks.find((t) => t.id === id); if (task) task.state = "cancelled";
+      view.cursor++; chatEmit(view); emit();
+    },
+    async sendChat({ id, content }) {
+      const view = chatView(id), task = state.tasks.find((t) => t.id === id);
+      if (timers.has(id)) throw new Error("演示回复正在进行");
+      const turn = { id: crypto.randomUUID(), chat_id: id, content, answer: "", state: "running" as const,
+        model_id: view.chat.model_id || "deepseek-flash", error: null, created_at: new Date().toISOString() };
+      view.turns.push(turn);
+      if (task) { if (task.draft === content) task.draft = ""; task.state = "running"; }
+      if (view.chat.route_state === "triage" && view.turns.length >= 2) {
+        view.chat.model_id = "gpt-6-astra"; view.chat.route_state = "locked";
+        view.chat.route_reason = "虚构分类：数学备课适合 GPT-6 Astra"; turn.model_id = "gpt-6-astra";
+      }
+      const event = (kind: string, payload: ChatView["events"][number]["payload"]) => {
+        view.events.push({ seq: ++view.cursor, chat_id: id, turn_id: turn.id, kind, payload, at: new Date().toISOString() });
+      };
+      const locked = view.chat.route_state === "locked";
+      if (locked) event("tool_start", { id: "fictional-tool-" + turn.id, name: "teacher_context", args: { action: "overview" } });
+      const answer = locked ? "这是**虚构的界面演示**，没有调用真实模型或保存教学结果。\n\n可以在这里流式阅读回复、展开执行步骤，并继续同一段对话。\n\n| 步骤 | 状态 |\n| --- | --- |\n| 了解需求 | 已演示 |\n| 读取资料 | 虚构结果 |"
+        : "这是虚构回复，用于预览界面。你希望这次完成什么内容？可以告诉我课程主题和面向的年级。";
+      view.cursor++; chatEmit(view); emit();
+      let index = 0;
+      const timer = setInterval(() => {
+        index += 3; turn.answer = answer.slice(0, index); view.cursor++;
+        if (index >= answer.length) {
+          clearInterval(timer); timers.delete(id);
+          (turn as ChatView["turns"][number]).state = "completed";
+          if (locked) event("tool_end", { id: "fictional-tool-" + turn.id, name: "teacher_context", result: '{"fictional":true,"students":0}' });
+          if (task) task.state = "completed";
+        }
+        chatEmit(view); emit();
+      }, 45);
+      timers.set(id, timer);
+      return turn;
     },
     async bindCandidate() {
       log("设备绑定");

@@ -110,3 +110,22 @@ CREATE TABLE IF NOT EXISTS recording_workflows (
   CHECK(state IN ('queued','transcribing','analyzing','completed','needs_attention'))
 );
 CREATE INDEX IF NOT EXISTS recording_workflow_state ON recording_workflows(state,lease_until);
+CREATE TABLE IF NOT EXISTS desktop_chats(
+  id TEXT PRIMARY KEY, hermes_session_id TEXT NOT NULL UNIQUE, native_tip TEXT NOT NULL,
+  title TEXT NOT NULL, route_state TEXT NOT NULL DEFAULT 'triage', model_id TEXT,
+  route_reason TEXT, category TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  CHECK(route_state IN ('triage','locked'))
+);
+CREATE TABLE IF NOT EXISTS desktop_turns(
+  id TEXT PRIMARY KEY, chat_id TEXT NOT NULL REFERENCES desktop_chats(id),
+  content TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', answer TEXT NOT NULL DEFAULT '',
+  model_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  CHECK(state IN ('queued','running','cancelling','completed','cancelled','failed','interrupted'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS desktop_one_active_turn ON desktop_turns(chat_id)
+  WHERE state IN ('queued','running','cancelling');
+CREATE TABLE IF NOT EXISTS desktop_chat_events(
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL REFERENCES desktop_chats(id),
+  turn_id TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL, at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS desktop_chat_events_cursor ON desktop_chat_events(chat_id,seq);

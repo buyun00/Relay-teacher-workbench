@@ -22,6 +22,8 @@ class Config:
     lease_seconds: int = 300
     auto_process_recordings: bool = False
     profile_home: Path | None = None
+    chat_triage_model: str = "deepseek-flash"
+    chat_models: tuple = ()
 
     @classmethod
     def load(cls, root: Path | None = None, home: Path | None = None) -> "Config":
@@ -40,6 +42,8 @@ class Config:
             lease_seconds=int(raw.get("lease_seconds", 300)),
             auto_process_recordings=bool(raw.get("auto_process_recordings", False)),
             profile_home=home.resolve(),
+            chat_triage_model=raw.get("chat_triage_model", "deepseek-flash"),
+            chat_models=tuple(raw.get("chat_models", [])),
         )
 
     def input_file(self, value: str) -> Path:

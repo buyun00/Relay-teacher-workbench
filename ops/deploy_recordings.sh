@@ -24,7 +24,7 @@ umask 077
 printf 'HERMES_UPLOADER_TOKEN=%s\n' "$HERMES_UPLOADER_TOKEN" > "$service/receiver.env"
 cat > /etc/systemd/system/teacher-recordings.service <<'UNIT'
 [Unit]
-Description=Teacher recording receiver and native Hermes workflow
+Description=Teacher desktop receiver, conversations and native recording workflow
 After=docker.service network-online.target
 Requires=docker.service
 [Service]

@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +15,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .artifacts import Artifacts
 from .config import Config, WorkbenchError
+from .chats import Chats, ChatWorker
 from .storage import Store, atomic_write, encode, now
 from .recordings import Recordings, RecordingWorker
 
@@ -243,7 +245,13 @@ class IngressServer(ThreadingHTTPServer):
 
     def __init__(self, address, ingress: DesktopIngress, token: str = ""):
         self.ingress, self.token = ingress, token
+        self.chats = Chats(ingress.store)
+        self.stream_stop = threading.Event()
         super().__init__(address, Handler)
+
+    def server_close(self):
+        self.stream_stop.set()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -277,6 +285,34 @@ class Handler(BaseHTTPRequestHandler):
             raise ProtocolError("Expected JSON object")
         return value
 
+    def stream_chat(self, chat_id, after):
+        chats = self.server.chats
+        chats.chat(chat_id)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        deadline = time.monotonic() + 40
+        try:
+            while time.monotonic() < deadline and not self.server.stream_stop.is_set():
+                events = chats.events(chat_id, after)
+                for event in events:
+                    self.wfile.write(("id: %s\ndata: %s\n\n" % (event["seq"], encode(event))).encode("utf-8"))
+                    after = event["seq"]
+                if not events:
+                    self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+                self.server.stream_stop.wait(.15 if events else .7)
+        except (ConnectionError, TimeoutError):
+            pass  # Closing the desktop detaches the stream, never cancels the native turn.
+
+    def chat_payload(self):
+        payload = self.payload()
+        if payload.get("workspace_id") != self.server.ingress.store.config.workspace_id:
+            raise ProtocolError("Workspace mismatch", 409)
+        return payload
+
     def dispatch(self):
         try:
             self.connection.settimeout(60)
@@ -290,6 +326,31 @@ class Handler(BaseHTTPRequestHandler):
                 result = ingress.open(self.payload())
             elif self.command == "POST" and parsed.path == "/v1/status":
                 result = ingress.statuses(self.payload())
+            elif self.command == "GET" and parsed.path == "/v1/chat-models":
+                result = self.server.chats.models()
+            elif parsed.path == "/v1/chats" and self.command in {"GET", "POST"}:
+                result = self.server.chats.list() if self.command == "GET" else self.server.chats.create(self.chat_payload())
+            elif match := re.fullmatch(r"/v1/chats/([A-Za-z0-9_-]+)(?:/(turns|model|cancel|events))?", parsed.path):
+                chat_id, action = match.groups()
+                chats = self.server.chats
+                if self.command == "GET" and not action:
+                    result = chats.read(chat_id)
+                elif self.command == "POST" and action == "turns":
+                    result = chats.submit(chat_id, self.chat_payload())
+                elif self.command == "POST" and action == "model":
+                    result = chats.select_model(chat_id, self.chat_payload())
+                elif self.command == "POST" and action == "cancel":
+                    self.chat_payload()
+                    result = chats.cancel(chat_id)
+                elif self.command == "GET" and action == "events":
+                    try:
+                        after = int(parse_qs(parsed.query).get("after", ["0"])[0])
+                    except ValueError as exc:
+                        raise ProtocolError("Invalid event cursor") from exc
+                    self.stream_chat(chat_id, after)
+                    return
+                else:
+                    raise ProtocolError("Not found", 404)
             elif self.command == "GET" and (match := re.fullmatch(r"/v1/recordings/([0-9a-f]{64})/results", parsed.path)):
                 result = ingress.results(match.group(1))
             elif match := re.fullmatch(r"/v1/uploads/(up_[a-f0-9]{64})(/complete)?", parsed.path):
@@ -311,7 +372,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, result)
         except ProtocolError as exc:
             self.reply(exc.status, {"error": str(exc)})
-        except (OSError, WorkbenchError, ValueError, KeyError):
+        except WorkbenchError as exc:
+            self.reply(409, {"error": str(exc)})
+        except (OSError, ValueError, KeyError):
             self.reply(500, {"error": "Persistence failed; file not acknowledged"})
 
     do_GET = do_POST = do_PUT = dispatch
@@ -333,8 +396,11 @@ def main():
     server = IngressServer((args.host, args.port), DesktopIngress(Store(config)), os.environ.get(args.token_env, ""))
     print(encode({"listen": server.server_address, "workspace_id": config.workspace_id, "protocol": 1}), flush=True)
     worker = RecordingWorker(server.ingress.store) if config.auto_process_recordings else None
+    chat_worker = ChatWorker(server.chats) if config.auto_process_recordings else None
     if worker:
         worker.start()
+    if chat_worker:
+        chat_worker.start()
     import signal
     def stop_signal(*_args):
         raise KeyboardInterrupt
@@ -346,6 +412,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if chat_worker:
+            chat_worker.stop()
         if worker:
             worker.stop()
         server.server_close()

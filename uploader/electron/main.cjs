@@ -11,6 +11,7 @@ const {
   Notification,
   protocol,
   net,
+  clipboard,
 } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -114,6 +115,24 @@ function handlers() {
   handle("snapshot", () => client.snapshot());
   handle("create-task", () => client.createTask());
   handle("task-draft", (input) => client.saveTaskDraft(input));
+  handle("chat-read", (id) => client.readChat(id));
+  handle("chat-send", async (input) => {
+    const turn = await client.chat.send(input);
+    const draft = client.db.setting("localTasks", []).find((t) => t.id === input.id)?.draft;
+    if (draft === input.content) client.saveTaskDraft({ id: input.id, draft: "" });
+    return turn;
+  });
+  handle("chat-model", (input) => client.chat.model(input));
+  handle("chat-cancel", (id) => client.chat.cancel(id));
+  handle("open-link", (value) => {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error("链接格式无效");
+    return shell.openExternal(url.href);
+  });
+  handle("copy-text", (value) => {
+    if (typeof value !== "string") throw new Error("复制内容无效");
+    clipboard.writeText(value);
+  });
   handle("settings", async (input) => {
     const previousLogin = client.config().startAtLogin;
     client.transport.stop();
@@ -223,6 +242,9 @@ async function start() {
   client.on("change", (snapshot) => {
     if (window && !window.isDestroyed())
       window.webContents.send("client:changed", snapshot);
+  });
+  client.on("chat", (view) => {
+    if (window && !window.isDestroyed()) window.webContents.send("client:chat", view);
   });
   const icon = nativeImage
     .createFromPath(path.join(__dirname, "assets", "icon.png"))

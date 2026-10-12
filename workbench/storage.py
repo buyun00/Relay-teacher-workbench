@@ -206,6 +206,8 @@ class Store:
             db.execute("UPDATE jobs SET state='needs_attention',owner=NULL,lease_until=NULL,error='从备份恢复，请核查外部执行状态' WHERE state IN ('running','waiting_external')")
             db.execute("UPDATE recording_workflows SET state='needs_attention',owner=NULL,lease_until=NULL,"
                        "error='从备份恢复，请核查外部执行状态；不会自动重新提交录音' WHERE state!='completed'")
+            db.execute("UPDATE desktop_turns SET state='interrupted',error='从业务备份恢复，请确认原生对话与外部执行状态；未重新执行消息' "
+                       "WHERE state IN ('queued','running','cancelling')")
         return {"path": str(destination), "workspace_id": manifest["workspace_id"]}
 
 

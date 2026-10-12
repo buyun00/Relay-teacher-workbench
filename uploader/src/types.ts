@@ -76,6 +76,7 @@ export interface Snapshot {
   mode: "desktop" | "preview";
   version: string;
   tasks: LocalTask[];
+  chatModels: ChatModel[];
   deviceState: "checking" | "ready" | "error";
   config: Settings;
   dataDir: string;
@@ -119,6 +120,7 @@ export interface LocalTask {
   draft: string;
   createdAt: string;
   updatedAt: string;
+  state?: ChatTurn["state"] | null;
 }
 export interface ClientAPI {
   snapshot(): Promise<Snapshot>;
@@ -130,6 +132,13 @@ export interface ClientAPI {
   selectFiles(): Promise<ManualImportResult | null>;
   createTask(): Promise<LocalTask>;
   saveTaskDraft(input: { id: string; draft: string }): Promise<unknown>;
+  readChat(id: string): Promise<ChatView>;
+  sendChat(input: { id: string; content: string }): Promise<unknown>;
+  selectChatModel(input: { id: string; modelId: string }): Promise<ChatView>;
+  cancelChat(id: string): Promise<unknown>;
+  openLink(url: string): Promise<unknown>;
+  copyText(value: string): Promise<unknown>;
+  subscribeChat(callback: (view: ChatView) => void): () => void;
   bindCandidate(input: { volumeId: string; name?: string }): Promise<unknown>;
   unbind(id: string): Promise<unknown>;
   scan(): Promise<unknown>;
@@ -141,6 +150,22 @@ export interface ClientAPI {
   checkUpdates(): Promise<unknown>;
   installUpdate(): Promise<unknown>;
   openDataDir(): Promise<unknown>;
+}
+export interface ChatModel { id: string; label: string; purpose: string }
+export interface ChatTurn {
+  id: string; chat_id: string; content: string; answer: string;
+  state: "queued" | "running" | "cancelling" | "completed" | "cancelled" | "failed" | "interrupted";
+  model_id?: string | null; error: string | null; created_at: string;
+}
+export interface ChatEvent {
+  seq: number; chat_id: string; turn_id: string | null; kind: string; at: string;
+  payload: { text?: string; id?: string; name?: string; args?: Record<string, unknown>; result?: string; failed?: boolean };
+}
+export interface ChatView {
+  chat: { id: string; title: string; hermes_session_id: string; native_tip: string;
+    route_state: "triage" | "locked"; model_id: string | null; route_reason: string | null; };
+  turns: ChatTurn[]; events: ChatEvent[]; cursor: number; workspace_id: string;
+  connection?: "online" | "offline"; connectionError?: string | null;
 }
 export interface RecordingResults {
   state: RemoteState;

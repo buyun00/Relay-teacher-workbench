@@ -7,6 +7,17 @@ contextBridge.exposeInMainWorld("classroom", {
   selectFiles: () => ipcRenderer.invoke("client:select-files"),
   createTask: () => ipcRenderer.invoke("client:create-task"),
   saveTaskDraft: (input) => ipcRenderer.invoke("client:task-draft", input),
+  readChat: (id) => ipcRenderer.invoke("client:chat-read", id),
+  sendChat: (input) => ipcRenderer.invoke("client:chat-send", input),
+  selectChatModel: (input) => ipcRenderer.invoke("client:chat-model", input),
+  cancelChat: (id) => ipcRenderer.invoke("client:chat-cancel", id),
+  openLink: (url) => ipcRenderer.invoke("client:open-link", url),
+  copyText: (value) => ipcRenderer.invoke("client:copy-text", value),
+  subscribeChat: (callback) => {
+    const listener = (_event, view) => callback(view);
+    ipcRenderer.on("client:chat", listener);
+    return () => ipcRenderer.removeListener("client:chat", listener);
+  },
   bindCandidate: (input) => ipcRenderer.invoke("client:bind-candidate", input),
   unbind: (id) => ipcRenderer.invoke("client:unbind", id),
   scan: () => ipcRenderer.invoke("client:scan"),

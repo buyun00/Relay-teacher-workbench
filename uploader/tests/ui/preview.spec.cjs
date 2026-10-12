@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-test("two-pane tasks support local drafts while the conversation service remains explicitly pending", async ({ page }) => {
+test("two-pane conversation streams, routes after early turns, shows steps, and supports stop", async ({ page }) => {
   await page.goto("http://127.0.0.1:5178");
   await expect(page.getByText("浏览器预览 · 虚构数据")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "消息草稿" })).toBeDisabled();
@@ -8,8 +8,19 @@ test("two-pane tasks support local drafts while the conversation service remains
   await page.getByRole("textbox", { name: "消息草稿" }).fill("虚构任务：整理课堂录音");
   await expect(page.getByRole("navigation", { name: "任务列表" })).toContainText("虚构任务：整理课堂录音");
   await expect(page.getByText("草稿已保存在本机")).toBeVisible();
-  await expect(page.getByRole("button", { name: "发送消息" })).toBeDisabled();
-  await expect(page.getByRole("heading", { name: "对话功能将在下一步接入" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送消息" })).toBeEnabled();
+  await page.getByRole("button", { name: "发送消息" }).click();
+  await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
+  await expect(page.getByLabel("AI 回复")).toContainText("虚构回复");
+  await expect(page.getByRole("button", { name: "发送消息" })).toBeVisible({ timeout: 10000 });
+  await page.getByRole("textbox", { name: "消息草稿" }).fill("虚构高一数学备课，解释对数函数");
+  await page.getByRole("textbox", { name: "消息草稿" }).press("Enter");
+  await expect(page.getByLabel("对话模型")).toHaveValue("gpt-6-astra");
+  await expect(page.getByText("执行步骤 · 0/1")).toBeVisible();
+  await page.getByRole("button", { name: "停止回复" }).click();
+  await expect(page.getByText("已停止", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await expect(page.getByLabel("AI 回复")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "设备管理", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "工作台", exact: true })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("爱马仕");

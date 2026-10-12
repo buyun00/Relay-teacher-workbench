@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  ArrowUp, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
+  Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
   LoaderCircle, MessageSquare, Mic, Pause, Play, Plus, Settings2,
   UploadCloud, X,
 } from "lucide-react";
 import { bridge } from "./bridge";
 import type { Recording, RecordingResults, Snapshot } from "./types";
+import { Chat } from "./Chat";
 
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 const size = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(1) + " KB";
@@ -24,9 +25,9 @@ export function App() {
   const [s, setSnapshot] = useState<Snapshot | null>(null);
   const [page, setPage] = useState<"chat" | "uploads">("chat");
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [settings, setSettings] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [fatal, setFatal] = useState("");
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
   const task = s?.tasks.find((item) => item.id === taskId) || s?.tasks[0];
@@ -38,7 +39,6 @@ export function App() {
     const unsubscribe = bridge.subscribe(setSnapshot);
     return () => { live = false; unsubscribe(); };
   }, []);
-  useEffect(() => { setDraft(task?.draft || ""); }, [task?.id]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 6000);
@@ -62,11 +62,14 @@ export function App() {
       setToast({ message, error: true });
     }
   };
-  const newTask = () => void run(async () => {
-    const created = await bridge.createTask();
-    setTaskId(created.id);
-    setPage("chat");
-  });
+  const newTask = () => {
+    setCreating(true);
+    void run(async () => {
+      const created = await bridge.createTask();
+      setTaskId(created.id);
+      setPage("chat");
+    }).finally(() => setCreating(false));
+  };
   const addFiles = async () => {
     setAdding(true);
     try {
@@ -87,13 +90,13 @@ export function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="app-name">课堂连接</div>
-        <button className="new-task" onClick={newTask}><Plus size={17} />新建任务</button>
+        <button className="new-task" disabled={creating} onClick={newTask}>{creating ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}新建任务</button>
         <div className="task-label">任务</div>
         <nav className="task-list" aria-label="任务列表">
           {s.tasks.length ? s.tasks.map((item) => (
             <button key={item.id} title={item.title} className={"task-item " + (page === "chat" && task?.id === item.id ? "selected" : "")}
               onClick={() => { setTaskId(item.id); setPage("chat"); }}>
-              <MessageSquare size={15} /><span>{item.title}</span>
+              {["queued", "running", "cancelling"].includes(item.state || "") ? <LoaderCircle size={15} className="spin" /> : <MessageSquare size={15} />}<span>{item.title}</span>
             </button>
           )) : <p className="no-tasks">还没有任务</p>}
         </nav>
@@ -108,29 +111,7 @@ export function App() {
       </aside>
       <main className="main-pane">
         {page === "chat" ? (
-          <div className="chat-view">
-            <header className="pane-header"><h1>{task?.title || "新任务"}</h1></header>
-            <div className="conversation">
-              <div className="conversation-empty">
-                <MessageSquare size={27} strokeWidth={1.3} />
-                <h2>{task ? "对话功能将在下一步接入" : "从左侧新建一个任务"}</h2>
-                <p>{task ? "现在可以保存消息草稿，也可以先测试录音上传。" : "在这里处理任务，在录音上传页添加课堂录音。"}</p>
-              </div>
-            </div>
-            <div className="composer-area">
-              <div className="composer">
-                <textarea aria-label="消息草稿" value={draft} disabled={!task}
-                  placeholder={task ? "输入消息，暂存为草稿…" : "先新建一个任务"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setDraft(value);
-                    if (task) void run(() => bridge.saveTaskDraft({ id: task.id, draft: value }));
-                  }} />
-                <div className="composer-bottom"><small>对话服务下一步接入</small><button className="send-button" disabled aria-label="发送消息" title="对话服务尚未接入"><ArrowUp size={18} /></button></div>
-              </div>
-              {task && draft && <span className="draft-note">{task.draft === draft ? "草稿已保存在本机" : "正在保存草稿…"}</span>}
-            </div>
-          </div>
+          <Chat key={task?.id || "empty"} task={task} snapshot={s} run={run} disabled={creating} />
         ) : (
           <Uploads snapshot={s} run={run} openSettings={() => setSettings(true)}
             uploadButton={<button className="button primary" disabled={adding || s.scanning || !!s.copying} onClick={() => void addFiles()}>
