@@ -45,11 +45,12 @@ class Workbench:
             if action == "document":
                 lesson_id = a.pop("lesson_id", None)
                 path = a.pop("path")
+                title = a.pop("title", None)
                 if a:
                     raise WorkbenchError("文档导入参数无效")
                 if lesson_id:
                     self.store.one("lessons", lesson_id)
-                asset = self.store.ingest(path, "document")
+                asset = self.store.ingest(path, "document", {"title": title} if title else None)
                 if lesson_id:
                     self.facts.link_asset(lesson_id, asset["id"])
                 return asset

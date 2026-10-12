@@ -1,7 +1,7 @@
 set -euo pipefail
-docker exec -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -v
-docker exec hermes-agent /opt/data/teacher-bin/teacher -z '请实际调用 teacher_context overview，只返回空间名称、已导入课次数和学生人数。不要导入验收材料。'
-docker exec -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+docker exec --user hermes -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -v
+docker exec --user hermes hermes-agent /opt/data/teacher-bin/teacher -z '请实际调用 teacher_context overview，只返回空间名称、已导入课次数和学生人数。不要导入验收材料。'
+docker exec --user hermes -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import tempfile
 from workbench.config import Config

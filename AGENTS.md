@@ -7,4 +7,5 @@
 - Student identity is independent of event interpretation. Unknown speakers remain unknown; speaker labels are local to one recording.
 - Teacher corrections preserve originals and revision history, immediately update effective facts and invalidate dependent artifacts.
 - Validate citations against current versions. Never count a chat reply or webhook acceptance as persisted business completion.
+- Internal development uses ordinary Hermes tools and filesystem access. Do not add plugin authorization hooks, import path/size restrictions, file hash rechecks, or courseware structure gates. Keep source version checks and deterministic business completion.
 - Test meaningful invariants and the real Hermes tool surface. Distinguish synthetic-data tests, real ASR and real classroom acceptance.

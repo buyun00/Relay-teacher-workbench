@@ -5,7 +5,6 @@ import json
 import os
 import shutil
 import sqlite3
-import tempfile
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -26,15 +25,10 @@ def encode(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
 
 
-def file_sha256(path: Path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream,"sha256").hexdigest()
-
-
 def atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as out:
-        temporary = Path(out.name)
+    temporary = path.parent / (".tmp-" + uuid.uuid4().hex)
+    with temporary.open("xb") as out:
         try:
             out.write(data)
             out.flush()
@@ -61,9 +55,6 @@ class Store:
         self.root = config.root
         for d in ("database", "originals", "transcripts", "artifacts", "inbox", "drafts", "temporary", "backups"):
             (self.root / d).mkdir(parents=True, exist_ok=True)
-            if os.name != "nt":
-                (self.root / d).chmod(0o711 if d=="drafts" and config.courseware_uid is not None else 0o700)
-        if os.name != "nt": self.root.chmod(0o711 if config.courseware_uid is not None else 0o700)
         self.db_path = self.root / "database" / "workbench.sqlite"
         with self.connect() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -117,17 +108,14 @@ class Store:
         source = self.config.input_file(path)
         if kind not in {"audio", "transcript", "roster", "scores", "document", "courseware"}:
             raise WorkbenchError("不支持此资料类型")
-        before = source.stat()
         digest = hashlib.sha256()
         size = 0
-        with tempfile.NamedTemporaryFile(dir=self.root / "temporary", delete=False) as out:
-            temporary = Path(out.name)
+        temporary = self.root / "temporary" / (".import-" + uuid.uuid4().hex)
+        with temporary.open("xb") as out:
             try:
                 with source.open("rb") as stream:
                     while chunk := stream.read(1024 * 1024):
                         size += len(chunk)
-                        if size > self.config.max_file_bytes:
-                            raise WorkbenchError("资料超过大小上限")
                         digest.update(chunk)
                         out.write(chunk)
                 out.flush()
@@ -136,9 +124,6 @@ class Store:
                 temporary.unlink(missing_ok=True)
                 raise
         try:
-            after = source.stat()
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or size != before.st_size:
-                raise WorkbenchError("资料复制期间发生变化，请等文件完整后重试")
             sha = digest.hexdigest()
             # Content-addressed paths let a later retry recover a rename-before-DB crash.
             relative = "originals/" + sha + "/original" + source.suffix.lower()
@@ -146,9 +131,6 @@ class Store:
             with self.transaction() as db:
                 row = db.execute("SELECT * FROM assets WHERE sha256=?", (sha,)).fetchone()
                 if row is not None:
-                    saved = self.config.stored_file(row["path"])
-                    if not saved.is_file() or saved.stat().st_size != row["byte_length"] or file_sha256(saved) != row["sha256"]:
-                        raise WorkbenchError("已登记原件缺失或损坏，需要恢复资料")
                     job = self._import_task(db, row["id"], task) if task else None
                     return {**dict(row), "duplicate": True, "job": job}
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -187,10 +169,10 @@ class Store:
                 shutil.copytree(self.root / directory, target / directory)
             manifest = {"workspace_id": self.config.workspace_id, "created_at": now(), "schema_version": 1}
             atomic_write(target / "manifest.json", encode(manifest).encode())
-            settings = {"workspace_id":self.config.workspace_id,"data_root":str(self.config.root),"import_roots":[str(p) for p in self.config.import_roots],
+            settings = {"workspace_id":self.config.workspace_id,"data_root":str(self.config.root),
                 "speech_url":self.config.speech_url,"speech_client":str(self.config.speech_client) if self.config.speech_client else None,
-                "hermes_command":str(self.config.hermes_command) if self.config.hermes_command else None,"courseware_profile":self.config.courseware_profile,"courseware_uid":self.config.courseware_uid,
-                "lease_seconds":self.config.lease_seconds,"max_attempts":self.config.max_attempts,"max_file_bytes":self.config.max_file_bytes}
+                "hermes_command":str(self.config.hermes_command) if self.config.hermes_command else None,"courseware_profile":self.config.courseware_profile,
+                "lease_seconds":self.config.lease_seconds,"max_attempts":self.config.max_attempts}
             atomic_write(target / "teacher-workbench.config.json", encode(settings).encode())
             self.audit(locked, "backup", target.name, {})
         return {"backup_id": target.name, "path": str(target), "includes": ["database", "originals", "transcripts", "artifacts"]}
@@ -207,11 +189,6 @@ class Store:
         with sqlite3.connect(backup / "workbench.sqlite", factory=ClosingConnection) as db:
             if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchone():
                 raise WorkbenchError("备份数据库完整性检查失败")
-            for table in ("assets", "transcripts", "artifacts"):
-                for row in db.execute(f"SELECT path FROM {table}"):
-                    file = (backup / row[0]).resolve()
-                    if not file.is_relative_to(backup) or not file.is_file():
-                        raise WorkbenchError("备份所引用的文件缺失或越界")
         destination.mkdir(parents=True)
         (destination / "database").mkdir()
         shutil.copy2(backup / "workbench.sqlite", destination / "database" / "workbench.sqlite")
@@ -219,7 +196,9 @@ class Store:
             shutil.copytree(backup / directory, destination / directory)
         if (backup / "teacher-workbench.config.json").is_file():
             settings=json.loads((backup / "teacher-workbench.config.json").read_text(encoding="utf-8"))
-            settings.update(data_root=str(destination),import_roots=[str(destination / "inbox")])
+            settings.update(data_root=str(destination))
+            for key in ("import_roots", "courseware_uid", "max_file_bytes"):
+                settings.pop(key, None)
             atomic_write(destination / "teacher-workbench.config.json",encode(settings).encode())
         restored = Store(Config(root=destination, workspace_id=manifest["workspace_id"]))
         # External processes are not part of a file backup. Require reconciliation.

@@ -27,10 +27,12 @@ class Jobs:
                 db.execute("INSERT INTO jobs(id,asset_id,lesson_id,kind,input_version,updated_at) VALUES(?,?,?,?,?,?)", (jid, asset_id, lesson_id, kind, input_version, now()))
         return self.store.one("jobs", jid)
 
-    def claim(self, job_id: str, owner: str) -> dict:
+    def claim(self, job_id: str, owner: str, kind=None) -> dict:
         owner = stable_id(owner)
         with self.store.transaction() as db:
             row = self.store.one("jobs", job_id, db)
+            if kind is not None and kind != row["kind"]:
+                raise WorkbenchError("任务类型与指定 kind 不匹配")
             expired = row["state"] == "running" and (row["lease_until"] or 0) < time.time()
             if row["state"] not in {"queued", "ready"} and not expired:
                 raise WorkbenchError("任务不能领取：已有执行者、已完成或需要人工处理")
@@ -64,10 +66,6 @@ class Jobs:
             expected_kind = "courseware" if row["kind"] == "courseware" else "brief"
             if artifact["kind"] != expected_kind:
                 raise WorkbenchError("产物类型与任务不匹配，不能用文字草稿完成课件任务")
-            if row["kind"] == "courseware":
-                validation = artifact["validation"]
-                if not validation.get("slides_with_animation") or not validation.get("slides_with_transition") or validation.get("notes",0) < validation.get("slides",1):
-                    raise WorkbenchError("课件尚未通过动画、过渡与备注结构检查")
             source_ids = {r["id"] for r in artifact["sources"]}
             if row["lesson_id"] and row["lesson_id"] not in source_ids:
                 raise WorkbenchError("产物必须包含任务课次的当前版本依赖")
@@ -113,9 +111,9 @@ class Jobs:
                 db.execute("UPDATE jobs SET state=?,owner=NULL,lease_until=NULL,error=?,updated_at=? WHERE id=?", (state, reason, now(), row["id"]))
         return {"recovered": len(expired)}
 
-    def list(self, state=None) -> dict:
+    def list(self, state=None, kind=None) -> dict:
         with self.store.connect() as db:
-            rows = [dict(r) for r in db.execute("SELECT * FROM jobs WHERE (? IS NULL OR state=?) ORDER BY updated_at,id", (state, state))]
+            rows = [dict(r) for r in db.execute("SELECT * FROM jobs WHERE (? IS NULL OR state=?) AND (? IS NULL OR kind=?) ORDER BY updated_at,id", (state, state, kind, kind))]
         return {"jobs": rows}
 
     def retry(self, job_id: str, external_checked: bool, reason: str) -> dict:

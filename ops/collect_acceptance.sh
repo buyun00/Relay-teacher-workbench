@@ -1,6 +1,6 @@
 set -euo pipefail
 mkdir -p /home/lin-server/teacher-workbench-upload/acceptance
-docker exec -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+docker exec --user hermes -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import json
 from workbench.config import Config
@@ -21,4 +21,3 @@ cp /srv/ai/hermes-agent/data/teacher-workspaces/fictional-demo/artifacts/artifac
 cp /srv/ai/hermes-agent/data/teacher-workspaces/fictional-demo/artifacts/artifact_7b770d16c8f54078/content.md /home/lin-server/teacher-workbench-upload/acceptance/preparation.md
 cp /srv/ai/hermes-agent/data/teacher-workspaces/fictional-demo/artifacts/artifact_765e6cebd5bb4291/content.md /home/lin-server/teacher-workbench-upload/acceptance/historical-brief.md
 chown -R lin-server:lin-server /home/lin-server/teacher-workbench-upload/acceptance
-chmod -R u+rwX,go-rwx /home/lin-server/teacher-workbench-upload/acceptance

@@ -1,5 +1,5 @@
 set -euo pipefail
-docker exec -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+docker exec --user hermes -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import os,subprocess
 prompt='''这是另一个新会话的教师更正验收，请实际保存，不要只承诺。

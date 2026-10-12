@@ -1,13 +1,10 @@
 {
   "workspace_id": "teacher",
   "data_root": "/opt/data/teacher-workspaces/teacher",
-  "import_roots": ["/opt/data/teacher-workspaces/teacher/inbox"],
   "speech_url": "http://YOUR_EXISTING_ASR_HOST:8765",
   "speech_client": "/opt/data/skills/local-speech-api/scripts/speech_client.py",
   "hermes_command": "/opt/hermes/bin/hermes",
   "courseware_profile": "teacher-courseware",
-  "courseware_uid": 10000,
-  "max_file_bytes": 1073741824,
   "max_attempts": 3,
   "lease_seconds": 300
 }

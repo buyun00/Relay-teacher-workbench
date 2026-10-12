@@ -1,6 +1,6 @@
 set -euo pipefail
 install -m 600 /home/lin-server/teacher-workbench-upload/fictional-function-lesson.wav /srv/ai/hermes-agent/data/teacher-workspaces/fictional-demo/inbox/fictional-function-lesson.wav
-docker exec -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+docker exec --user hermes -i -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 from workbench.config import Config
 from workbench.service import Workbench

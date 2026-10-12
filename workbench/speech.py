@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import wave
 
 from .config import WorkbenchError
 from .facts import Facts
@@ -35,23 +34,6 @@ class Speech:
         return self.call("health", timeout=15)
 
     def import_audio(self, path: str, lesson_id: str) -> dict:
-        source = self.store.config.input_file(path)
-        if source.suffix.lower() not in {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".wma"}:
-            raise WorkbenchError("音频扩展名不受支持")
-        if source.suffix.lower() == ".wav":
-            try:
-                with wave.open(str(source)) as audio:
-                    if audio.getnframes() <= 0:
-                        raise WorkbenchError("录音没有音频帧")
-            except (wave.Error, EOFError) as exc:
-                raise WorkbenchError("WAV 文件不可读") from exc
-        else:
-            try:
-                process = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "json", str(source)], capture_output=True, text=True, timeout=20)
-                if process.returncode or not json.loads(process.stdout).get("streams"):
-                    raise WorkbenchError("资料没有可读音轨")
-            except (OSError, ValueError) as exc:
-                raise WorkbenchError("媒体校验工具不可用") from exc
         return self.store.ingest(path, "audio", {"origin": "teacher_import"},
                                  task={"kind": "audio", "lesson_id": lesson_id, "input_version": "asr-v1"})
 

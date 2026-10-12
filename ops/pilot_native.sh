@@ -1,6 +1,6 @@
 set -euo pipefail
-docker exec -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python -m unittest discover -s tests -v
-docker exec -i hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+docker exec --user hermes -w /opt/data/profiles/teacher-workbench/plugins/teacher-workbench hermes-agent /opt/hermes/.venv/bin/python -m unittest discover -s tests -v
+docker exec --user hermes -i hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import subprocess
 prompt='''这是虚构教学材料的验收，全部操作只用教师工具。文件都在 /opt/data/teacher-workspaces/fictional-demo/inbox。

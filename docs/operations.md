@@ -9,12 +9,14 @@
 在宿主机有 Docker 管理权限的终端进入教师入口：
 
 ```sh
-sudo docker exec -it hermes-agent /opt/data/teacher-bin/teacher
+sudo docker exec --user hermes -it hermes-agent /opt/data/teacher-bin/teacher
 ```
 
 单次调用可使用 `/opt/data/teacher-bin/teacher -z '教师问题'`。正式数据空间未导入测试学生。现有网页和消息平台暂未绑定此 profile。
 
-代码更新：本仓库 `py scripts/build_bundle.py` 打包，复制 code-only 包到宿主机 `/home/lin-server/teacher-workbench-upload/plugin.tar.gz` 后，以管理员运行 `ops/deploy_hermes.sh`。脚本在更新前备份旧插件，仅写三个本项目 profile，不修改默认助手，不复制 OAuth 文件，不启动新的公网服务。模型认证使用现有 Hermes 凭据解析机制。配置中的 ASR 地址与课件 UID 需要与现场一致。
+教师 profile 设置 `tools.tool_search.enabled: off`，让 9 个教学工具直接出现在模型工具列表中，同时启用终端、文件和技能工具。插件已移除 `pre_tool_call` 权限拦截，宿主的工具发现入口也可正常使用。教师入口、后台课件和维护命令均使用现有 `hermes` 用户，避免混用 root 创建文件后出现写入失败；没有额外的插件鉴权或目录权限层。
+
+代码更新：本仓库 `py scripts/build_bundle.py` 打包，复制 code-only 包到宿主机 `/home/lin-server/teacher-workbench-upload/plugin.tar.gz` 后，以管理员运行 `ops/deploy_hermes.sh`。脚本在更新前备份旧插件，仅写三个本项目 profile，不修改默认助手，不复制 OAuth 文件，不启动新的公网服务。模型认证使用现有 Hermes 凭据解析机制。配置中的 ASR 地址需要与现场一致。
 
 本次发现现有 ASR 的旧内网 IP 和旧 GPU UUID 已失效，已备份 Compose 后只修复绑定、以既有镜像启动服务。模型及参数未更换。教师配置当前使用开发机已验证的 LAN ASR 地址；以后地址变化应更新 profile 的 teacher-workbench.json。
 
@@ -35,7 +37,7 @@ backup 包含一致性 SQLite 快照、原件、转写、产物和非凭据配�
 /opt/hermes/.venv/bin/python -m workbench.cli restore /path/to/backup /path/to/new-workspace
 ```
 
-恢复会校验数据库完整性与文件引用，保留更正和待确认问题；正在运行或等待外部的任务改为 needs_attention，防止把旧外部执行当作在线任务。将恢复出的 teacher-workbench.config.json 校核后写入相应 profile，确认新 data_root 和 import_roots，再使用新空间。
+恢复只检查 SQLite 完整性和版本，保留更正和待确认问题；正在运行或等待外部的任务改为 needs_attention，防止把旧外部执行当作在线任务。将恢复出的 teacher-workbench.config.json 写入相应 profile，确认新 data_root 后使用新空间。旧配置中的 import_roots、courseware_uid、max_file_bytes 已取消。
 
 任务状态：queued 尚未领取；waiting_external 表示已有 ASR 任务 ID；ready 表示转写已保存、待复盘；running 表示持有租约；completed 表示对应产物已保存并通过当前来源检查。needs_attention 要先核对外部执行与文件，不能把任务队列清空后重跑。
 

@@ -1,34 +1,10 @@
 from __future__ import annotations
 
 import json
-import zipfile
-import xml.etree.ElementTree as ET
 
 from .config import WorkbenchError
 from .facts import Facts, required_text
 from .storage import Store, atomic_write, encode, identifier, now
-
-
-def pptx_structure(path) -> dict:
-    try:
-        with zipfile.ZipFile(path) as archive:
-            if sum(f.file_size for f in archive.infolist()) > 256 * 1024 * 1024:
-                raise WorkbenchError("课件解压大小超过检查上限")
-            names = archive.namelist()
-            if "ppt/presentation.xml" not in names or archive.testzip():
-                raise WorkbenchError("PPTX 文件结构损坏")
-            slides = [n for n in names if n.startswith("ppt/slides/slide") and n.endswith(".xml") and "/_rels/" not in n]
-            if not slides:
-                raise WorkbenchError("课件没有幻灯片")
-            namespace = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
-            trees = [ET.fromstring(archive.read(n)) for n in slides]
-            transitions = sum(t.find(namespace + "transition") is not None for t in trees)
-            animations = sum(t.find(namespace + "timing") is not None for t in trees)
-            notes = sum(n.startswith("ppt/notesSlides/notesSlide") and n.endswith(".xml") for n in names)
-            return {"slides": len(slides), "slides_with_transition": transitions, "slides_with_animation": animations,
-                    "notes": notes, "scope": "zip_and_ooxml_structure_only", "wps_playback_verified": False}
-    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
-        raise WorkbenchError("不是有效的 PPTX 文件") from exc
 
 
 class Artifacts:
@@ -41,10 +17,8 @@ class Artifacts:
             raise WorkbenchError("产物类型无效")
         title = required_text(title, "产物标题", 300)
         if kind == "courseware":
-            original = self.store.config.input_file(path)
-            if original.suffix.lower() != ".pptx":
-                raise WorkbenchError("课件产物必须为 PPTX")
-            validation = pptx_structure(original)
+            validation = {"scope": "source_references_and_versions", "resource_structure_checked": False,
+                          "teaching_quality_verified": False, "wps_playback_verified": False}
             asset = self.store.ingest(path, "courseware")
             relative = asset["path"]
         else:

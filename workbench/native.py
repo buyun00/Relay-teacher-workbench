@@ -26,7 +26,7 @@ def schema(name, description, properties, required=()):
 
 SCHEMAS = [
     schema("teacher_context", "查看当前教师空间、名单、资料覆盖与待确认问题。", {"action": prop("string", enum=["overview", "questions"]), **SCOPE, "lesson_id": prop("string"), "status": prop("string", enum=["open", "answered", "skipped"]), "limit": prop("integer")}, ["action"]),
-    schema("teacher_import", "导入教师 inbox 内资料。成绩/名单格式见 Skill，时间与身份未知时保留未知。", {
+    schema("teacher_import", "导入指定路径的教学资料。成绩/名单格式见 Skill，时间与身份未知时保留未知。", {
         "action": prop("string", enum=["roster", "lesson", "transcript", "audio", "scores", "document", "link"]),
         "path": prop("string"), "class_id": prop("string"), "class_name": prop("string"), "lesson_id": prop("string"),
         "topic": prop("string"), "occurred_at": prop("string"), "version": prop("string"), "asset_id": prop("string"),
@@ -104,11 +104,6 @@ def register_plugin(ctx, workbench: Workbench | None = None):
         return {"context": "教师插件运行上下文（由宿主绑定）：" + encode({"workspace_id": workbench.store.config.workspace_id,
                 "current_message_id": message["id"], "pending_questions": questions, "ready_jobs": ready, "waiting_jobs": waiting})}
 
-    def before_tool(tool_name=None, args=None, **kwargs):
-        if tool_name not in {d["name"] for d in SCHEMAS} | {"skills_list", "skill_view"}:
-            return {"action": "block", "message": "教师入口只使用受控教学工具和技能读取；课件由专用制作入口处理。"}
-        return None
-
     def observe(tool_name=None, result=None, **kwargs):
         if tool_name and tool_name.startswith("teacher_"):
             try:
@@ -125,7 +120,6 @@ def register_plugin(ctx, workbench: Workbench | None = None):
 
     ctx.register_hook("on_session_start", lambda **kwargs: workbench.jobs.recover())
     ctx.register_hook("pre_llm_call", before_turn)
-    ctx.register_hook("pre_tool_call", before_tool)
     ctx.register_hook("post_tool_call", observe)
     ctx.register_hook("on_session_end", session_end)
     return workbench

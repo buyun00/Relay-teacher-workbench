@@ -19,7 +19,7 @@ class TeacherCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "teacher"
-        self.w = Workbench(Config(root=self.root, import_roots=(self.root / "inbox",)))
+        self.w = Workbench(Config(root=self.root))
         for source in Path(__file__).with_name("fixtures").iterdir():
             shutil.copy2(source, self.root / "inbox" / source.name)
         self.w.facts.roster(self.path("roster.csv"), "demo_class", "虚构班级")
@@ -54,13 +54,15 @@ class TeacherCase(unittest.TestCase):
         Path(self.path("renamed.json")).write_text("different", encoding="utf-8")
         self.assertNotEqual(first["id"], self.w.store.ingest(self.path("renamed.json"), "document")["id"])
 
-    def test_import_path_cannot_read_other_space(self):
+    def test_import_accepts_any_explicit_file_path(self):
         outside = Path(self.temp.name) / "other.md"
-        outside.write_text("another workspace", encoding="utf-8")
+        outside.write_text("fictional material outside inbox", encoding="utf-8")
+        asset = self.w.invoke("teacher_import", {"action": "document", "path": str(outside), "title": "虚构目录外资料"})
+        self.assertEqual(json.loads(asset["provenance"])["title"], "虚构目录外资料")
+        self.assertEqual(self.w.store.config.stored_file(asset["path"]).read_bytes(), outside.read_bytes())
+        self.assertEqual(self.w.store.config.stored_file("../other.md"), outside)
         with self.assertRaises(WorkbenchError):
-            self.w.store.ingest(str(outside), "document")
-        with self.assertRaises(WorkbenchError):
-            self.w.store.config.stored_file("../other.md")
+            self.w.store.ingest(str(outside.with_name("missing.md")), "document")
 
     def test_cross_lesson_chinese_short_query_and_coverage(self):
         result = self.w.query.search("定义域", class_id="demo_class", limit=1)
@@ -197,7 +199,7 @@ class TeacherCase(unittest.TestCase):
             self.w.facts.evidence(self.ref)
         self.assertEqual(self.w.query.search("根号下大于")["total_matches"], 0)
 
-    def test_native_hooks_bind_each_chat_and_block_raw_tools(self):
+    def test_native_hooks_bind_each_chat_without_intercepting_tools(self):
         class Context:
             def __init__(self): self.tools, self.hooks = {}, {}
             def register_tool(self, **kw): self.tools[kw["name"]] = kw["handler"]
@@ -214,8 +216,7 @@ class TeacherCase(unittest.TestCase):
         self.assertNotEqual(ma, mb)
         result = json.loads(ctx.tools["teacher_correct"]({"action": "apply", "target_kind": "lesson", "target_id": "demo_l1", "expected_revision": self.w.store.one("lessons", "demo_l1")["revision"], "changes": {"topic": "新课题"}}, task_id="missing"))
         self.assertFalse(result["ok"])
-        self.assertEqual(ctx.hooks["pre_tool_call"](tool_name="terminal")["action"], "block")
-        self.assertIsNone(ctx.hooks["pre_tool_call"](tool_name="teacher_query"))
+        self.assertEqual(set(ctx.hooks), {"on_session_start", "pre_llm_call", "post_tool_call", "on_session_end"})
         ctx.hooks["on_session_end"](session_id="b")
         missing=json.loads(ctx.tools["teacher_context"]({"action":"overview"},task_id="old_unknown_task"))
         self.assertIsNone(missing["result"]["current_message_id"])
@@ -266,12 +267,46 @@ class TeacherCase(unittest.TestCase):
         a=self.w.artifacts.save("brief","文字报告",[self.ref],text="没有做课件")
         with self.assertRaises(WorkbenchError): self.w.jobs.complete(j["id"],claim["owner"],claim["fence"],a["id"])
 
-    def test_imported_original_corruption_is_detected(self):
+    def test_duplicate_import_does_not_recheck_saved_file_hash(self):
         asset=self.w.store.ingest(self.path("lesson1.json"),"transcript")
         original=self.w.store.config.stored_file(asset["path"])
         data=original.read_bytes()
         original.write_bytes(b'x'+data[1:])
-        with self.assertRaises(WorkbenchError): self.w.store.ingest(self.path("lesson1.json"),"transcript")
+        again = self.w.store.ingest(self.path("lesson1.json"), "transcript")
+        self.assertEqual(again["id"], asset["id"])
+        self.assertTrue(again["duplicate"])
+
+    def test_audio_import_has_no_extension_or_media_probe_gate(self):
+        path = Path(self.temp.name) / "fictional-audio.bin"
+        path.write_bytes(b"fictional test bytes; no ASR execution")
+        asset = self.w.speech.import_audio(str(path), "demo_l1")
+        self.assertEqual(asset["kind"], "audio")
+        self.assertEqual(asset["job"]["state"], "queued")
+
+    def test_courseware_completion_requires_current_sources_but_no_structure_gate(self):
+        preparation = self.w.artifacts.save("preparation", "虚构备课", [self.ref], text="测试课件保存")
+        job = Courseware(self.w.store).prepare(preparation["id"])["job"]
+        claimed = self.w.jobs.claim(job["id"], "operator")
+        path = Path(self.temp.name) / "fictional-output.bin"
+        path.write_bytes(b"fictional output; deliberately no PPT structure")
+        artifact = self.w.artifacts.save("courseware", "虚构课件", [self.ref], path=str(path))
+        self.assertFalse(artifact["validation"]["resource_structure_checked"])
+        self.assertEqual(self.w.jobs.complete(job["id"], claimed["owner"], claimed["fence"], artifact["id"])["state"], "completed")
+        self.w.facts.correct("segment", self.ref["id"], 1, {"text": "更正后的原话"}, self.message())
+        self.assertTrue(self.w.artifacts.read(artifact["id"])["stale"])
+        with self.assertRaises(WorkbenchError):
+            self.w.artifacts.save("courseware", "旧来源课件", [self.ref], path=str(path))
+
+    def test_native_job_list_filters_kind_and_state(self):
+        review = self.w.jobs.enqueue("review", "1", lesson_id="demo_l1")
+        asset = self.w.speech.import_audio(self.path("lesson1.json"), "demo_l1")
+        result = self.w.invoke("teacher_job", {"action": "list", "kind": "audio", "state": "queued"})
+        self.assertEqual([j["id"] for j in result["jobs"]], [asset["job"]["id"]])
+        self.assertEqual([j["id"] for j in self.w.jobs.list(kind="review")["jobs"]], [review["id"]])
+        with self.assertRaises(WorkbenchError):
+            self.w.invoke("teacher_job", {"action": "claim", "job_id": review["id"], "owner": "operator", "kind": "audio"})
+        claimed = self.w.invoke("teacher_job", {"action": "claim", "job_id": review["id"], "owner": "operator", "kind": "review"})
+        self.assertEqual(claimed["state"], "running")
 
     def test_export_preserves_structured_history(self):
         from workbench.maintenance import Maintenance
