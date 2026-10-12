@@ -231,6 +231,44 @@ class Importer {
       this.onChange();
     }
   }
+  async importFiles(sources) {
+    // A picker may remain open while an automatic scan starts. Wait for that
+    // scan rather than copying concurrently through the shared staging state.
+    while (this.scanning || this.active) {
+      if (this.stopped) throw new Error("客户端正在退出，请重新添加文件");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (this.stopped) throw new Error("客户端正在退出，请重新添加文件");
+    const result = { added: 0, duplicates: 0, failed: [] };
+    this.scanning = true;
+    this.onChange();
+    try {
+      for (const selected of sources) {
+        if (this.stopped) throw new Error("客户端正在退出，请重新添加文件");
+        const source = path.resolve(selected);
+        try {
+          const stat = await fsp.stat(source);
+          if (!stat.isFile()) throw new Error("请选择音频文件");
+          const root = path.dirname(source);
+          const copied = await this.copy(source, {
+            id: "manual:" + root,
+            name: "手动上传",
+            root,
+          }, stat);
+          if (copied.duplicate) result.duplicates++;
+          else result.added++;
+        } catch (error) {
+          const detail = error.name === "AbortError" ? "复制已停止，请重新添加" : error.message;
+          result.failed.push({ filename: path.basename(source), detail });
+          this.db.log(`手动添加失败：${path.basename(source)} · ${detail}`, "error");
+        }
+      }
+      return result;
+    } finally {
+      this.scanning = false;
+      this.onChange();
+    }
+  }
   stop() {
     this.stopped = true;
     this.controller?.abort();

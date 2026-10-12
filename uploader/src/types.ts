@@ -73,6 +73,8 @@ export interface Settings {
 export interface Snapshot {
   mode: "desktop" | "preview";
   version: string;
+  tasks: LocalTask[];
+  deviceState: "checking" | "ready" | "error";
   config: Settings;
   dataDir: string;
   devices: Device[];
@@ -104,6 +106,18 @@ export interface Snapshot {
   };
   logs: { id: number; at: string; level: string; message: string }[];
 }
+export interface ManualImportResult {
+  added: number;
+  duplicates: number;
+  failed: { filename: string; detail: string }[];
+}
+export interface LocalTask {
+  id: string;
+  title: string;
+  draft: string;
+  createdAt: string;
+  updatedAt: string;
+}
 export interface ClientAPI {
   snapshot(): Promise<Snapshot>;
   subscribe(callback: (snapshot: Snapshot) => void): () => void;
@@ -111,6 +125,9 @@ export interface ClientAPI {
     input: Partial<Settings> & { token?: string; clearToken?: boolean },
   ): Promise<unknown>;
   selectFolder(): Promise<unknown>;
+  selectFiles(): Promise<ManualImportResult | null>;
+  createTask(): Promise<LocalTask>;
+  saveTaskDraft(input: { id: string; draft: string }): Promise<unknown>;
   bindCandidate(input: { volumeId: string; name?: string }): Promise<unknown>;
   unbind(id: string): Promise<unknown>;
   scan(): Promise<unknown>;

@@ -41,6 +41,8 @@ function browserPreview(): ClientAPI {
   const state: Snapshot = {
     mode: "preview",
     version: "0.1.0",
+    tasks: [],
+    deviceState: "ready",
     dataDir: "浏览器预览 · 不保存真实录音",
     config: {
       endpoint: "",
@@ -96,7 +98,7 @@ function browserPreview(): ClientAPI {
         id: 3,
         at: `${date}T15:45:00+08:00`,
         level: "info",
-        message: "演示：爱马仕已保存一份录音",
+        message: "演示：接收端已保存一份录音",
       },
       {
         id: 2,
@@ -113,6 +115,7 @@ function browserPreview(): ClientAPI {
     ],
   };
   const listeners = new Set<(snapshot: Snapshot) => void>();
+  let manualDemo = 100;
   const emit = () => listeners.forEach((fn) => fn(structuredClone(state)));
   const log = (message: string) => {
     state.logs.unshift({
@@ -138,6 +141,31 @@ function browserPreview(): ClientAPI {
     },
     async selectFolder() {
       log("安装后的桌面端会打开文件夹选择器");
+    },
+    async selectFiles() {
+      const n = manualDemo++;
+      state.files.unshift({
+        ...make(n, "queued", null, 17),
+        filename: `虚构_手动上传_${n}.wav`,
+        sourceName: "手动上传",
+        createdAt: new Date().toISOString(),
+      });
+      log("手动添加了一份虚构音频；真实文件需在桌面端选择");
+      return { added: 1, duplicates: 0, failed: [] };
+    },
+    async createTask() {
+      const task = { id: crypto.randomUUID(), title: "新任务", draft: "", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      state.tasks.unshift(task);
+      emit();
+      return task;
+    },
+    async saveTaskDraft({ id, draft }) {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) throw new Error("任务不存在");
+      task.draft = draft;
+      task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
+      task.updatedAt = new Date().toISOString();
+      emit();
     },
     async bindCandidate() {
       log("设备绑定");

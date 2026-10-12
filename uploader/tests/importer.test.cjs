@@ -81,6 +81,67 @@ test("a source changing while copied is not registered or declared ready", async
   assert.deepEqual(await fsp.readdir(db.staging), []);
 });
 
+test("manual selection copies only selected files, deduplicates content, and keeps good files after a failure", async (t) => {
+  const { source, db } = await fixture(t);
+  const first = path.join(source, "fictional-selected.wav");
+  const renamed = path.join(source, "fictional-duplicate.mp3");
+  const last = path.join(source, "fictional-last.m4a");
+  const ignored = path.join(source, "fictional-unselected.wav");
+  await fsp.writeFile(first, "FICTIONAL MANUAL CONTENT A");
+  await fsp.copyFile(first, renamed);
+  await fsp.writeFile(last, "FICTIONAL MANUAL CONTENT B");
+  await fsp.writeFile(ignored, "FICTIONAL FILE THAT MUST NOT BE IMPORTED");
+  db.setSetting("pauseUploads", true);
+  const importer = new Importer(db);
+  const result = await importer.importFiles([
+    first, renamed, path.join(source, "fictional-missing.wav"), last,
+  ]);
+  assert.equal(result.added, 2);
+  assert.equal(result.duplicates, 1);
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.failed[0].filename, "fictional-missing.wav");
+  assert.equal(db.all().length, 2);
+  assert.ok(db.all().every((row) => row.source_name === "手动上传"));
+  assert.deepEqual(db.setting("devices", []), []);
+  assert.equal(db.setting("pauseUploads"), true);
+  assert.equal(await fsp.readFile(first, "utf8"), "FICTIONAL MANUAL CONTENT A");
+  const duplicate = await importer.importFiles([last, first]);
+  assert.equal(duplicate.added, 0);
+  assert.equal(duplicate.duplicates, 2);
+  await fsp.unlink(first);
+  await fsp.unlink(last);
+  assert.deepEqual(
+    await Promise.all(db.all().map((row) => fsp.readFile(row.staged_path, "utf8"))),
+    ["FICTIONAL MANUAL CONTENT B", "FICTIONAL MANUAL CONTENT A"],
+  );
+  assert.ok((await fsp.readdir(db.staging)).every((name) => !name.startsWith(".partial-")));
+});
+
+test("manual selection waits for automatic scanning rather than overlapping staging copies", async (t) => {
+  const { root, source, db, device } = await fixture(t);
+  const automatic = path.join(source, "fictional-automatic.wav");
+  const manual = path.join(root, "fictional-manual.wav");
+  await fsp.writeFile(automatic, Buffer.alloc(1024 * 1024, 65));
+  await fsp.writeFile(manual, "FICTIONAL MANUAL COPY");
+  const importer = new Importer(db, () => {}, 0);
+  await importer.scan([device]);
+  const copy = importer.copy.bind(importer);
+  let active = 0, maximum = 0;
+  t.mock.method(importer, "copy", async (...args) => {
+    maximum = Math.max(maximum, ++active);
+    try { return await copy(...args); }
+    finally { active--; }
+  });
+  const scanning = importer.scan([device]);
+  const selecting = importer.importFiles([manual]);
+  const [, result] = await Promise.all([scanning, selecting]);
+  assert.equal(result.added, 1);
+  assert.equal(maximum, 1);
+  assert.equal(db.all().length, 2);
+  assert.equal(importer.active, null);
+  assert.equal(importer.scanning, false);
+});
+
 test("scan waits for two stable observations and does not import a growing recording", async (t) => {
   const { source, db, device } = await fixture(t);
   const file = path.join(source, "fictional-stable.wav");

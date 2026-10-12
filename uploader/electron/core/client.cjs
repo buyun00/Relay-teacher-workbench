@@ -22,6 +22,7 @@ class ClassroomClient extends EventEmitter {
     this.volumes = [];
     this.timers = [];
     this.deviceBusy = false;
+    this.deviceState = "checking";
     this.stopping = false;
     this.importer = new Importer(
       this.db,
@@ -165,6 +166,7 @@ class ClassroomClient extends EventEmitter {
     this.deviceBusy = true;
     try {
       this.volumes = await this.getVolumes();
+      this.deviceState = "ready";
       const previous = new Map(this.devices.map((d) => [d.id, d]));
       this.devices = this.config().devices.map((binding) => {
         const volume = binding.volumeId
@@ -190,6 +192,7 @@ class ClassroomClient extends EventEmitter {
         };
       });
     } catch {
+      this.deviceState = "error";
       this.devices = this.devices.map((d) => ({
         ...d,
         connected: false,
@@ -203,6 +206,30 @@ class ClassroomClient extends EventEmitter {
   }
   async scan() {
     if (!this.stopping) await this.importer.scan(this.devices);
+  }
+  async addFiles(sources) {
+    if (this.stopping) throw new Error("客户端正在退出，请重新添加文件");
+    return this.importer.importFiles(sources);
+  }
+  createTask() {
+    const task = {
+      id: crypto.randomUUID(), title: "新任务", draft: "",
+      createdAt: iso(), updatedAt: iso(),
+    };
+    this.db.setSetting("localTasks", [task, ...this.db.setting("localTasks", [])]);
+    this.changed();
+    return task;
+  }
+  saveTaskDraft({ id, draft }) {
+    if (typeof draft !== "string") throw new Error("消息草稿无效");
+    const tasks = this.db.setting("localTasks", []);
+    const task = tasks.find((item) => item.id === id);
+    if (!task) throw new Error("任务不存在");
+    task.draft = draft;
+    task.title = draft.trim().split(/\r?\n/)[0].slice(0, 36) || "新任务";
+    task.updatedAt = iso();
+    this.db.setSetting("localTasks", tasks);
+    this.changed();
   }
   async start() {
     await this.importer.recover();
@@ -235,6 +262,8 @@ class ClassroomClient extends EventEmitter {
     return {
       mode: "desktop",
       version: this.version,
+      tasks: this.db.setting("localTasks", []),
+      deviceState: this.deviceState,
       config,
       dataDir: this.db.root,
       devices: this.devices.map((d) => ({

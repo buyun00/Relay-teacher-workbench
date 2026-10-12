@@ -126,9 +126,11 @@ async function startReceiver(root) {
       ),
       true,
     );
-    await window.getByRole("button", { name: "连接与设置" }).click();
-    if (localBuild)
+    await window.getByRole("button", { name: "设置", exact: true }).click();
+    if (localBuild) {
+      await window.getByText("更多设置", { exact: true }).click();
       await expect(window.getByRole("button", { name: "本地包手动升级" })).toBeDisabled();
+    }
     const token = "FICTIONAL-ENCRYPTION-CHECK-ONLY";
     await window.getByLabel("连接凭据", { exact: true }).fill(token);
     await window.getByRole("button", { name: "保存设置", exact: true }).click();
@@ -144,6 +146,11 @@ async function startReceiver(root) {
     state = await window.evaluate(() => window.classroom.snapshot());
     assert.equal(state.config.hasToken, true);
     assert.equal(JSON.stringify(state).includes(token), false);
+    await window.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await window.getByRole("button", { name: "新建任务", exact: true }).click();
+    const taskDraft = "EXPLICITLY FICTIONAL TASK DRAFT; NOT SENT TO A SERVICE";
+    await window.getByRole("textbox", { name: "消息草稿" }).fill(taskDraft);
+    await expect.poll(() => window.evaluate(() => window.classroom.snapshot()).then((s) => s.tasks[0]?.draft)).toBe(taskDraft);
     await window.evaluate(() => window.classroom.pause(true));
 
     const device = path.join(root, "fictional-device");
@@ -161,7 +168,8 @@ async function startReceiver(root) {
         filePaths: [directory],
       });
     }, device);
-    await window.evaluate(() => window.classroom.selectFolder());
+    await window.getByRole("button", { name: "录音上传", exact: true }).click();
+    await window.getByRole("button", { name: "选择录音目录", exact: true }).click();
     await expect
       .poll(
         () =>
@@ -177,7 +185,39 @@ async function startReceiver(root) {
       state.files[0].sha256,
       crypto.createHash("sha256").update(content).digest("hex"),
     );
+    const manualDirectory = path.join(root, "fictional-manual-selection");
+    await fsp.mkdir(manualDirectory);
+    const manualFilename = path.join(manualDirectory, "fictional-manual.m4a");
+    const duplicateFilename = path.join(manualDirectory, "fictional-renamed.mp3");
+    const manualContent = Buffer.from("EXPLICITLY FICTIONAL MANUAL UPLOAD; NEVER SUBMITTED TO ASR");
+    await fsp.writeFile(manualFilename, manualContent);
+    await fsp.writeFile(duplicateFilename, content);
+    await fsp.writeFile(path.join(manualDirectory, "fictional-unselected.wav"), "FICTIONAL UNSELECTED FILE");
+    await app.evaluate(({ dialog }) => {
+      dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+    });
+    assert.equal(await window.evaluate(() => window.classroom.selectFiles()), null);
+    assert.equal((await window.evaluate(() => window.classroom.snapshot())).files.length, 1);
+    await app.evaluate(({ dialog }, selected) => {
+      dialog.showOpenDialog = async (_window, options) => {
+        if (!options.properties.includes("openFile") || !options.properties.includes("multiSelections"))
+          throw new Error("Manual upload must use the native multi-file picker");
+        return { canceled: false, filePaths: selected };
+      };
+    }, [manualFilename, duplicateFilename]);
+    await window.getByRole("button", { name: "录音上传", exact: true }).click();
+    await window.getByRole("button", { name: "手动上传", exact: true }).click();
+    await expect(window.getByRole("status")).toContainText("新增 1 份录音；重复 1 份");
+    state = await window.evaluate(() => window.classroom.snapshot());
+    assert.equal(state.files.length, 2);
+    assert.equal(state.config.devices.length, 1);
+    assert.equal(state.files.find((file) => file.filename === "fictional-manual.m4a").sourceName, "手动上传");
+    assert.equal(await fsp.readFile(manualFilename).then((bytes) => bytes.equals(manualContent)), true);
+    await window.getByRole("button", { name: "手动上传", exact: true }).click();
+    await expect(window.getByRole("status")).toContainText("新增 0 份录音；重复 2 份");
+    assert.equal((await window.evaluate(() => window.classroom.snapshot())).files.length, 2);
     await fsp.rm(device, { recursive: true, force: true }); // Simulated unplug, before upload.
+    await fsp.rm(manualDirectory, { recursive: true, force: true }); // All original files removed before upload.
     await window.evaluate(
       (endpoint) =>
         window.classroom.saveSettings({ endpoint, workspaceId: "teacher" }),
@@ -189,24 +229,20 @@ async function startReceiver(root) {
         () =>
           window
             .evaluate(() => window.classroom.snapshot())
-            .then((s) => s.files[0]?.state),
+            .then((s) => s.files.length === 2 && s.files.every((file) => file.state === "received")),
         { timeout: 20000 },
       )
-      .toBe("received");
+      .toBe(true);
     await window.evaluate(() => window.classroom.refreshStatus());
     state = await window.evaluate(() => window.classroom.snapshot());
-    assert.equal(state.files[0].remote.state, "awaiting_lesson");
-    assert.equal(state.files[0].receipt.sha256, state.files[0].sha256);
-    const serverOriginal = path.join(
-      root,
-      "receiver/originals",
-      state.files[0].sha256,
-      "original.wav",
-    );
-    assert.equal(
-      await fsp.readFile(serverOriginal).then((bytes) => bytes.equals(content)),
-      true,
-    );
+    for (const file of state.files) {
+      assert.equal(file.remote.state, "awaiting_lesson");
+      assert.equal(file.receipt.sha256, file.sha256);
+      const extension = path.extname(file.filename);
+      const serverOriginal = path.join(root, "receiver/originals", file.sha256, "original" + extension);
+      const expected = file.sourceName === "手动上传" ? manualContent : content;
+      assert.equal(await fsp.readFile(serverOriginal).then((bytes) => bytes.equals(expected)), true);
+    }
     if (localBuild)
       assert.equal(await app.evaluate(() => globalThis.localUpdateChecks), 0);
     await window.evaluate(() => window.classroom.pause(true));
@@ -220,8 +256,9 @@ async function startReceiver(root) {
       () => !!window.classroom && !!document.querySelector(".app-shell"),
     );
     state = await window.evaluate(() => window.classroom.snapshot());
-    assert.equal(state.files.length, 1);
-    assert.equal(state.files[0].state, "received");
+    assert.equal(state.files.length, 2);
+    assert.ok(state.files.every((file) => file.state === "received"));
+    assert.equal(state.tasks[0].draft, taskDraft);
     assert.equal(state.config.pauseUploads, true);
     assert.equal(state.config.hasToken, true);
     const storedBytes = await fsp.readFile(path.join(profile, "queue.sqlite"));
@@ -231,7 +268,7 @@ async function startReceiver(root) {
       console.log("Local installer acceptance passed: explicit local version, updates disabled, retained queue and settings.");
     }
     console.log(
-      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, real native bridge copy, unplug-before-upload, persisted receiver receipt/status, restart preserves queue and pause.`,
+      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, device and multi-file manual copy, cancellation/deduplication, source removal before upload, persisted receiver receipt/status, restart preserves queue and pause.`,
     );
   } finally {
     if (app) {

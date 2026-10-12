@@ -65,7 +65,7 @@ function createWindow() {
     height: 820,
     minWidth: 980,
     minHeight: 680,
-    title: "课堂连接 · 爱马仕",
+    title: "课堂连接",
     backgroundColor: "#f7f8f5",
     autoHideMenuBar: true,
     show: false,
@@ -112,6 +112,8 @@ function handlers() {
       return fn(input);
     });
   handle("snapshot", () => client.snapshot());
+  handle("create-task", () => client.createTask());
+  handle("task-draft", (input) => client.saveTaskDraft(input));
   handle("settings", async (input) => {
     const previousLogin = client.config().startAtLogin;
     client.transport.stop();
@@ -134,6 +136,19 @@ function handlers() {
       properties: ["openDirectory"],
     });
     if (!result.canceled) await client.bind(result.filePaths[0]);
+  });
+  handle("select-files", async () => {
+    const result = await dialog.showOpenDialog(window, {
+      title: "选择要上传的音频文件",
+      buttonLabel: "添加到上传队列",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "音频文件", extensions: ["wav", "mp3", "m4a", "aac", "flac", "ogg", "opus", "wma"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return client.addFiles(result.filePaths);
   });
   handle("bind-candidate", async (input) => {
     const volume = client.volumes.find((v) => v.volumeId === input.volumeId);

@@ -51,7 +51,7 @@ class Transport {
     this.connection = {
       state: "unconfigured",
       checkedAt: null,
-      detail: "填写爱马仕接收端地址后开始传输",
+      detail: "填写录音接收地址后开始传输",
     };
     this.nextStatusAt = 0;
   }
@@ -230,7 +230,7 @@ class Transport {
         error: null,
         next_try: 0,
       });
-      this.db.log("爱马仕已保存：" + file.filename);
+      this.db.log("录音已上传并保存：" + file.filename);
       this.connection = {
         state: "online",
         checkedAt: iso(),
