@@ -245,10 +245,13 @@ class ClassroomClient extends EventEmitter {
     if (task?.chatScope && task.chatScope !== this.chat.scope()) throw new Error("此对话属于另一个教师空间");
     if (this.config().endpoint) {
       const view = await this.chat.archive({ id, archived });
-      if (task) {
-        task.chatScope = this.chat.scope();
-        task.archived_at = view.chat.archived_at;
-        this.db.setSetting("localTasks", tasks);
+      // Network waits must not overwrite drafts or tasks created in the meantime.
+      const latestTasks = this.db.setting("localTasks", []);
+      const latestTask = latestTasks.find((t) => t.id === id);
+      if (latestTask) {
+        latestTask.chatScope = this.chat.scope();
+        latestTask.archived_at = view.chat.archived_at;
+        this.db.setSetting("localTasks", latestTasks);
       }
     } else {
       task.archived_at = archived ? iso() : null;

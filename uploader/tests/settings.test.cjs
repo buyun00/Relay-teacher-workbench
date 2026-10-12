@@ -33,6 +33,30 @@ test("local task drafts survive restart independently of the recording queue and
   assert.equal(state.tasks.some((task) => "messages" in task || "completed" in task), false);
 });
 
+test("archiving during a network wait preserves newer drafts and other newly created tasks", async (t) => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "fictional-classroom-archive-draft-"));
+  let client = new ClassroomClient(root, { getVolumes: async () => [] });
+  t.after(async () => { await client.close(); await fsp.rm(root, { recursive: true, force: true }); });
+  client.db.setSetting("endpoint", "http://127.0.0.1:8766");
+  const first = client.createTask();
+  client.saveTaskDraft({ id: first.id, draft: "虚构旧草稿" });
+  let reply;
+  client.chat.archive = () => new Promise((resolve) => { reply = resolve; });
+  const pending = client.archiveTask({ id: first.id, archived: true });
+  client.saveTaskDraft({ id: first.id, draft: "虚构的新草稿，必须保留" });
+  const second = client.createTask();
+  client.saveTaskDraft({ id: second.id, draft: "虚构的另一段对话" });
+  reply({ chat: { archived_at: "2026-01-01T00:00:00Z" } });
+  await pending;
+  await client.close();
+  client = new ClassroomClient(root, { getVolumes: async () => [] });
+  const state = client.snapshot();
+  assert.equal(state.tasks.length, 2);
+  assert.equal(state.tasks.find((task) => task.id === first.id).draft, "虚构的新草稿，必须保留");
+  assert.ok(state.tasks.find((task) => task.id === first.id).archived_at);
+  assert.equal(state.tasks.find((task) => task.id === second.id).draft, "虚构的另一段对话");
+});
+
 test("invalid settings leave the previous receiver and workspace intact", async (t) => {
   const root = await fsp.mkdtemp(
     path.join(os.tmpdir(), "fictional-classroom-settings-"),
