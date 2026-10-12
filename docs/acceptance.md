@@ -14,6 +14,7 @@
 | 正式接收端 | 空闲检查与 Store 备份后，只更新教师插件、重启 teacher-recordings 自身；doctor 确认 0.1.4、9 工具及 4 钩子；健康、4 个模型及对话列表接口通过，SQLite 完整性与外键检查通过 |
 | 已有资料 | 原有 1 份音频、1 个任务、1 份转写、2 份报告和现有对话保留；录音工作流仍为 analyzed 且完整，未重新提交 ASR |
 | 本地安装包 | `uploader/release-local/Hermes-Classroom-Local-0.1.0-local.20261012T174235Z-x64-Setup.exe`，119151338 字节；关闭 GitHub 自动更新，正式发布构建继续独立运行 |
+| GitHub 正式发布 | [Actions 38286256297](https://github.com/buyun00/Relay-teacher-workbench/actions/runs/38286256297) 的 Windows 与 publish job 均通过；[v0.1.9](https://github.com/buyun00/Relay-teacher-workbench/releases/tag/v0.1.9) 已公开，EXE 为 119159231 字节；安装包、blockmap、latest.yml 与 build-info.json 均获得 GitHub SHA-256 回执，构建源码为 `ae369ea9548c7411cce752a306e8296fd6579fe7` |
 
 本轮真实模型验收使用仓库外独立 profile 和明确虚构内容；未对真实课堂教学准确性重新验收。运行了最新打包程序，没有执行安装向导覆盖本机正在使用的客户端；安装升级验收仍独立。归档只改变显示分组，业务完成仍以有效来源、实际产物及任务状态为准。
 
