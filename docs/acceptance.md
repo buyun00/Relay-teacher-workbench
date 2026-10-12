@@ -5,9 +5,13 @@
 源码仓库 `buyun00/Relay-teacher-workbench` 经 API 确认为公开，本机已有 Git Credential Manager 登录具有写入和管理权限。未新建安装包仓库、未创建或保存个人发布 Token；发布 job 使用 GitHub 自动注入的同仓库 token，只有该 job 获得 `contents: write`。
 
 - `main` 相关改动 push 后自动测试、生成 `主.次.workflow运行编号` 版本、打包和发布；PR 只验证，手动任务默认只构建。
-- 新增 5 项发布规则测试通过，Node 共 21 项；TypeScript/Vite 和 2 项浏览器检查通过。版本/lockfile同步、清单和资产校验、完整草稿发布、过时构建拦截及重跑不覆盖版本均有虚构测试。
+- GitHub Windows runner 实际通过 33 项 Python、23 项 Node、2 项浏览器检查（共 58 项），另通过 TypeScript/Vite、Electron 开发运行及真实打包 EXE 的复制/断盘传输/重启验证。版本/lockfile同步、清单和资产校验、完整草稿发布、过时构建拦截、重跑不覆盖版本和下载取消后的重试均有虚构测试。
 - 安装包、blockmap、latest.yml 与 build-info.json 上传且确认 SHA-256 后才公开 Release；更新入口改为现有源码仓库。
-- 远端首次构建/发布正在接入，完成后的 run、版本和公开更新实测追加在本节。
+- 公开 Release `v0.1.3` 已发布：[GitHub run 38214827823](https://github.com/buyun00/Relay-teacher-workbench/actions/runs/38214827823)，Windows 和 publish job 都是 success；[下载页面](https://github.com/buyun00/Relay-teacher-workbench/releases/tag/v0.1.3)。EXE 长度 114415309 字节，源码 `fd31c05d341fb445d13a89a094ed16f0d5c3f36b`，四个资产都已获得 GitHub SHA-256 回执。
+- 最初 runner 使用 Windows 8.3 短路径，使已有路径字符串比较测试失败；改为比较实际文件身份后，完整 33 项测试在 runner 通过。失败的构建没有发布版本。
+- 在独立临时资料/更新缓存中运行客户端，不使用 GitHub 凭据，实际发现公开的 0.1.2 和 0.1.3 更新并获取更新清单/新 blockmap。大文件下载在本机网络很慢，限定观察时间内没有完成；直接 curl 同一公开文件在 30 秒内收到 524288 字节后达到本次测试时限。客户端日志仍有 download-progress 事件，低比例进度在测试显示中被舍入为 0%，不能据此判断完全无进展。
+- 用户浏览器截图显示 0.1.3 安装包正在下载，约 33.2 KB/s、已收到 1486 KB / 109 MB，证明该公开 EXE 可以下载；截图中的剩余时间为当时估计，不能视为下载完成。
+- 客户端在后台持续下载，有新数据就刷新空闲计时；不限制慢速下载总时长。持续两分钟完全无进展才取消并显示可重试提示，不改变录音队列或暂停偏好。在独立打包程序中，用只针对本次 EXE 的测试网络拦截人为制造无数据，并将测试间隔缩短为 5 秒；实际 CancellationToken 取消、update-cancelled 事件和可重试错误状态已通过。公开 EXE 完整下载及跨版本实际安装尚未验收。
 
 开发与故障恢复流程见 `docs/classroom-client-release.md`。当前仍未配置 Windows Authenticode 签名；真实 DJI、正式接收端和跨版本实际安装不由 CI 合成链路代替。
 
