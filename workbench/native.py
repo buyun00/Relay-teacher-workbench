@@ -102,7 +102,8 @@ def register_plugin(ctx, workbench: Workbench | None = None):
         ready = workbench.jobs.list("ready")["jobs"][:3]
         waiting = workbench.jobs.list("waiting_external")["jobs"][:3]
         return {"context": "教师插件运行上下文（由宿主绑定）：" + encode({"workspace_id": workbench.store.config.workspace_id,
-                "current_message_id": message["id"], "pending_questions": questions, "ready_jobs": ready, "waiting_jobs": waiting})}
+                "current_message_id": message["id"], "pending_questions": questions, "ready_jobs": ready, "waiting_jobs": waiting,
+                "pending_recordings": workbench.query.pending_recordings(5)})}
 
     def observe(tool_name=None, result=None, **kwargs):
         if tool_name and tool_name.startswith("teacher_"):

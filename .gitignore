@@ -13,3 +13,7 @@ dist/
 *.log
 *.pem
 *.key
+node_modules/
+uploader/release/
+uploader/test-results/
+uploader/playwright-report/

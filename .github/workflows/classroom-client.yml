@@ -1,0 +1,108 @@
+name: Classroom client · Build and update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      [
+        "uploader/**",
+        "workbench/**",
+        "tests/**",
+        ".github/workflows/classroom-client.yml",
+        "docs/classroom-client-release.md",
+      ]
+  pull_request:
+    paths:
+      [
+        "uploader/**",
+        "workbench/**",
+        "tests/**",
+        ".github/workflows/classroom-client.yml",
+      ]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish an update from main after all checks pass"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: classroom-client-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: uploader
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: uploader/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Assign a unique update version
+        run: node scripts/prepare-ci.cjs
+      - run: npm ci --no-fund --no-audit
+      - run: npx playwright install chromium
+      - name: Python invariants and native tool surface
+        working-directory: .
+        run: python -X utf8 -m unittest discover -s tests -v
+      - name: Client queue, transport, updater and browser preview
+        run: npm run check
+      - name: Isolated Electron runtime
+        run: node tests/electron-smoke.cjs
+      - name: Build NSIS installer and update assets
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run pack:win
+      - name: Test packaged EXE with isolated fictional files
+        env:
+          CLASSROOM_PACKAGED_EXE: ${{ github.workspace }}/uploader/release/win-unpacked/Hermes Classroom.exe
+        run: node tests/electron-smoke.cjs
+      - name: Verify installer and write source provenance
+        run: node scripts/verify-release.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: classroom-client-windows
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            uploader/release/*.exe
+            uploader/release/*.blockmap
+            uploader/release/latest.yml
+            uploader/release/build-info.json
+
+  publish:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          name: classroom-client-windows
+          path: installer
+      - name: Publish installer to public Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node uploader/scripts/publish-release.cjs installer

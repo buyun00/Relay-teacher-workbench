@@ -12,6 +12,13 @@ class Query:
         self.store = store
         self.facts = Facts(store)
 
+    def pending_recordings(self, limit=20):
+        with self.store.connect() as db:
+            return [dict(r) for r in db.execute("""SELECT a.id,a.filename,a.received_at,a.byte_length
+                FROM assets a WHERE a.kind='audio' AND NOT EXISTS
+                (SELECT 1 FROM lesson_assets la WHERE la.asset_id=a.id)
+                ORDER BY a.received_at DESC LIMIT ?""", (limit,))]
+
     def scope(self, class_id=None, student_id=None, since=None, until=None):
         clauses, values = [], []
         if class_id:

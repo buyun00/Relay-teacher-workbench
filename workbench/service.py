@@ -34,6 +34,7 @@ class Workbench:
                     result["students"] = [dict(r) for r in db.execute("SELECT * FROM students")]
                 result["current_message_id"] = context.get("message_id")
                 result["pending_questions"] = self.query.questions()
+                result["pending_recordings"] = self.query.pending_recordings()
                 return result
             if action == "questions":
                 return self.query.questions(**a)

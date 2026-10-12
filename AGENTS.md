@@ -1,6 +1,6 @@
 # Teacher workbench
 
-- Scope: one Hermes teacher plugin, SQLite and files; reuse ASR and courseware. No uploader, Aliyun or school platform in this iteration.
+- Scope: one Hermes teacher plugin, SQLite and files; reuse ASR and courseware. The next authorized iteration adds the React/Electron desktop file uploader and a thin receiver using the same Store. No Aliyun or school platform work.
 - Keep real teaching data, runtime state and credentials outside the repository. Tests use explicitly fictional records.
 - Use native Hermes plugin APIs; do not patch Hermes core, upgrade the host, restart unrelated services or mount the Docker socket.
 - Model reasoning is flexible; storage, source validation, scores, revisions and task completion are deterministic code.

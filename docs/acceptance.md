@@ -1,5 +1,35 @@
 # 验收记录
 
+## 2026-10-12 同仓库 GitHub 自动发布
+
+源码仓库 `buyun00/Relay-teacher-workbench` 经 API 确认为公开，本机已有 Git Credential Manager 登录具有写入和管理权限。未新建安装包仓库、未创建或保存个人发布 Token；发布 job 使用 GitHub 自动注入的同仓库 token，只有该 job 获得 `contents: write`。
+
+- `main` 相关改动 push 后自动测试、生成 `主.次.workflow运行编号` 版本、打包和发布；PR 只验证，手动任务默认只构建。
+- 新增 5 项发布规则测试通过，Node 共 21 项；TypeScript/Vite 和 2 项浏览器检查通过。版本/lockfile同步、清单和资产校验、完整草稿发布、过时构建拦截及重跑不覆盖版本均有虚构测试。
+- 安装包、blockmap、latest.yml 与 build-info.json 上传且确认 SHA-256 后才公开 Release；更新入口改为现有源码仓库。
+- 远端首次构建/发布正在接入，完成后的 run、版本和公开更新实测追加在本节。
+
+开发与故障恢复流程见 `docs/classroom-client-release.md`。当前仍未配置 Windows Authenticode 签名；真实 DJI、正式接收端和跨版本实际安装不由 CI 合成链路代替。
+
+## 2026-10-12 课堂连接客户端（0.1.0）
+
+新增 React / TypeScript 浏览器预览和 Electron Windows 桌面端：设备目录绑定、文件稳定观察、本地完整副本、内容去重、SQLite 队列、4 MiB 分段续传、匹配的持久化回执、教学状态查询、托盘、Windows 加密凭据及手动确认安装的自动更新。原生 Hermes 仍承担课次关联、ASR 和复盘；接收 HTTP 原件不自动进行教学分析。
+
+| 层面 | 本轮结果 |
+|---|---|
+| TypeScript / Vite | 类型检查及生产构建通过；同一产物通过 Electron 本地协议加载 |
+| Node 核心测试 | 16 项通过；改名去重、同名替换、文件变化、不可读子目录/消失文件不阻塞其他复制、重启、丢失副本、盘符复用、设置原子保存、续传、丢失/错配回执、凭据错误和更新安装时机 |
+| Python / 原生工具接口 | 33 项虚构资料测试通过；原有 26 项保留，新接收入口 7 项含实际 HTTP、偏移/事务恢复、原件落盘、课次发现与来源过期状态。未在正式 Hermes 宿主加载本轮代码 |
+| 浏览器 | 2 项交互测试通过；内置浏览器实际查看页面。全部显示数据明确为虚构，未将其当作真实设备或教学处理证据 |
+| Electron 开发运行 | 原生桥、沙箱、本地 UI 协议、Windows 加密凭据通过；复制虚构文件后移除模拟设备目录，仍从本地副本传输至真实 Python 接收入口，原件字节及回执/待关联课次状态匹配；重启保留队列和暂停偏好 |
+| 打包后的实际 EXE | 同一独立目录链路通过；运行 `release/win-unpacked/Hermes Classroom.exe`，不是只检查源码。没有修改默认用户资料或系统登录启动状态 |
+| Windows 安装包 | NSIS x64 EXE、blockmap、latest.yml 已生成（约 114 MB）。更新清单 SHA-512 / 文件长度匹配；主程序产品信息为 Hermes Classroom 0.1.0.0；未配置 Authenticode 签名 |
+| GitHub Actions | Windows 构建、测试、发布公开 Release 的 workflow 已写好，YAML 可解析；本机 gh 未登录，未推送、运行远端 workflow 或创建公开安装包仓库 |
+| 真实设备与业务 | DJI Mic Mini 2S 实际 USB 挂载、循环覆盖、同时录制/导出、真实课堂传输及正式宿主接收尚未验证；本轮没有调用真实 ASR、重启服务或使用真实教学资料 |
+| 更新安装 | 安装时机、复制期间拦截和暂停偏好有测试；公开 GitHub 发现、下载、安装向导、跨版本安装恢复和现场 Windows 自启仍未实测 |
+
+完整操作、数据位置和发布配置见 `uploader/README.md`。本次客户端验证使用仓库外临时目录，接收端也只服务虚构资料；之前真实 ASR 和课件的结果不能替代此客户端链路的真实验收。构建输出、预览截图、测试报告及依赖目录均被 Git 忽略。
+
 ## 2026-10-12 内网开发简化（0.1.1）
 
 Windows 和现有 Linux 宿主均通过 26 项虚构资料测试。原生 Hermes doctor 实测注册 9 个工具、4 个钩子。
