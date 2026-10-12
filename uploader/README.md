@@ -29,10 +29,15 @@ npm run dev        # http://127.0.0.1:5178，浏览器界面预览
 npm run desktop    # 同一开发界面，启用实际 Electron 文件能力
 npm run check      # TypeScript / 构建、Node 队列与传输测试、浏览器交互
 node tests/electron-smoke.cjs
-npm run pack:win   # release/Hermes-Classroom-0.1.0-x64-Setup.exe
+npm run pack:local # release-local/Hermes-Classroom-Local-<本地版本>-x64-Setup.exe
+# pack:win 留给正式发布构建：release/Hermes-Classroom-<正式版本>-x64-Setup.exe
 ```
 
 浏览器测试首次运行前执行 `npx playwright install chromium`。Windows 本机只有 Python launcher 时使用 `py`；CI 使用 `python`。Electron 下载使用 npm 官方包内的校验值；没有把二进制、node_modules、构建目录或运行资料提交到 Git。
+
+本地开发交付包含可直接安装的 EXE，使用 `npm run pack:local`，无需去 GitHub 下载。它写入独立的 `release-local/`，版本带 `-local.<UTC时间>`；只修改打包后的版本信息，不修改源码版本或 lockfile，不发布 Release，不自动检查或下载 GitHub 更新。设置页标明本地包，后续安装新生成的本地 EXE 即可升级。
+
+本地包与正式包使用同一应用身份和用户资料目录，可以手动覆盖安装并保留队列、录音副本和连接设置；安装正式包后恢复 GitHub 自动更新。两种构建输出分别管理，不提交任何安装包或运行数据。
 
 ## 首次使用
 
@@ -93,9 +98,9 @@ py -X utf8 -m workbench.ingress --root "$env:TEMP\fictional-classroom-receiver" 
 
 PR 只构建/测试，不公开更新。手动运行 workflow 默认只构建；在 main 勾选 publish 可发布。发布前后检查 main 提交，过时构建不会发布；较旧版本重跑也不会抢占最新版本。已经公开的同一版本不覆盖安装包，重跑会保留原 Release。并发 main 构建按队列执行，PR 新提交可取消旧检查。
 
-CI 和本地构建的默认更新地址都是 `buyun00/Relay-teacher-workbench`。已有 0.1.0 本地安装包没有内置这个地址，需要在“连接与设置”填一次；之后的 CI 版本自带地址。以后升级主/次版本时修改 package.json 与 lockfile；保持 workflow 文件路径稳定以保留运行编号。Windows 版本各段必须不超过 65535。完整开发、恢复和凭据说明见 [发布流程](../docs/classroom-client-release.md)。
+正式 CI 包的默认更新地址是 `buyun00/Relay-teacher-workbench`；`pack:local` 的本地包关闭 GitHub 更新。最初制作的 0.1.0 包没有内置这个地址，需要在“连接与设置”填一次；之后的 CI 版本自带地址。以后升级主/次版本时修改 package.json 与 lockfile；保持 workflow 文件路径稳定以保留运行编号。Windows 版本各段必须不超过 65535。完整开发、恢复和凭据说明见 [发布流程](../docs/classroom-client-release.md)。
 
-安装版启动后检查更新，此后每 6 小时检查；自动下载新包，下载好后发系统提示，并在设置页提供“安装更新并重启”。持续两分钟没有下载进展时取消，提示检查 GitHub 下载连接并允许重试，不影响录音传输。**下载完成、关闭窗口或退出都不会自动安装**。复制/扫描期间禁用安装；安装前暂停并结束本次网络操作，保留队列和用户的暂停偏好，再启动新版本。开发版不会下载安装更新。
+正式安装版启动后检查更新，此后每 6 小时检查；自动下载新包，下载好后发系统提示，并在设置页提供“安装更新并重启”。持续两分钟没有下载进展时取消，提示检查 GitHub 下载连接并允许重试，不影响录音传输。**下载完成、关闭窗口或退出都不会自动安装**。复制/扫描期间禁用安装；安装前暂停并结束本次网络操作，保留队列和用户的暂停偏好，再启动新版本。浏览器、Electron 开发运行和本地安装包不会下载安装更新。
 
 本机可复用 Git Credential Manager 已保存的 GitHub 登录完成首次部署；不用把 Token 粘贴到聊天、源码或安装包。当前 EXE 未做 Authenticode 签名。代码签名证书是后续改善 Windows 安装体验的独立配置，不是当前自动打包/更新所需凭据。远端首次运行和公开更新的实测结果记录在 `docs/acceptance.md`。
 

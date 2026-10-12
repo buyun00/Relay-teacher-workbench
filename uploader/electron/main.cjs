@@ -33,6 +33,7 @@ let window, tray, client, updates;
 let quitting = false,
   closing = false;
 const devURL = !app.isPackaged ? process.env.CLASSROOM_DEV_URL : null;
+const buildChannel = require("../package.json").classroomBuild?.channel || "release";
 // Explicit profiles allow isolated acceptance without touching the teacher's default data.
 const profileDirectory = app.commandLine.getSwitchValue("user-data-dir");
 if (profileDirectory) app.setPath("userData", path.resolve(profileDirectory));
@@ -186,6 +187,7 @@ async function start() {
     client.db.setSetting("releaseRepo", release);
   updates = new Updates(autoUpdater, client, {
     packaged: app.isPackaged,
+    channel: buildChannel,
     notify(version) {
       if (Notification.isSupported())
         new Notification({
@@ -230,7 +232,7 @@ async function start() {
   );
   tray.on("double-click", show);
   await client.start();
-  if (app.isPackaged) {
+  if (app.isPackaged && buildChannel !== "local") {
     setTimeout(() => void updates.check(), 10000);
     setInterval(() => void updates.check(), 6 * 60 * 60 * 1000).unref();
   }

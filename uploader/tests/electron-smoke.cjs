@@ -92,6 +92,25 @@ async function startReceiver(root) {
       () => !!window.classroom && !!document.querySelector(".app-shell"),
     );
     let state = await window.evaluate(() => window.classroom.snapshot());
+    const localBuild = await app.evaluate(({ app }) => {
+      const requireApp = process.getBuiltinModule("module").createRequire(
+        app.getAppPath() + "/electron/main.cjs",
+      );
+      const local = requireApp("../package.json").classroomBuild?.channel === "local";
+      if (local) {
+        globalThis.localUpdateChecks = 0;
+        requireApp("electron-updater").autoUpdater.checkForUpdates = async () => {
+          globalThis.localUpdateChecks++;
+          throw new Error("A local installer must not request a GitHub update");
+        };
+      }
+      return local;
+    });
+    if (localBuild) {
+      assert.match(state.version, /-local\./);
+      assert.equal(state.update.state, "local");
+      await window.evaluate(() => window.classroom.checkUpdates());
+    }
     assert.equal(state.mode, "desktop");
     assert.equal(state.files.length, 0);
     assert.equal(state.dataDir, profile);
@@ -108,6 +127,8 @@ async function startReceiver(root) {
       true,
     );
     await window.getByRole("button", { name: "连接与设置" }).click();
+    if (localBuild)
+      await expect(window.getByRole("button", { name: "本地包手动升级" })).toBeDisabled();
     const token = "FICTIONAL-ENCRYPTION-CHECK-ONLY";
     await window.getByLabel("连接凭据", { exact: true }).fill(token);
     await window.getByRole("button", { name: "保存设置", exact: true }).click();
@@ -186,6 +207,8 @@ async function startReceiver(root) {
       await fsp.readFile(serverOriginal).then((bytes) => bytes.equals(content)),
       true,
     );
+    if (localBuild)
+      assert.equal(await app.evaluate(() => globalThis.localUpdateChecks), 0);
     await window.evaluate(() => window.classroom.pause(true));
     await app.evaluate(({ app }) => app.quit());
     await app.close().catch(() => {});
@@ -203,6 +226,10 @@ async function startReceiver(root) {
     assert.equal(state.config.hasToken, true);
     const storedBytes = await fsp.readFile(path.join(profile, "queue.sqlite"));
     assert.equal(storedBytes.includes(Buffer.from(token)), false);
+    if (localBuild) {
+      assert.equal(state.update.state, "local");
+      console.log("Local installer acceptance passed: explicit local version, updates disabled, retained queue and settings.");
+    }
     console.log(
       `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, real native bridge copy, unplug-before-upload, persisted receiver receipt/status, restart preserves queue and pause.`,
     );

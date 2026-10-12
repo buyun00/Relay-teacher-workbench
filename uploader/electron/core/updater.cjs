@@ -3,13 +3,14 @@ class Updates {
     this.updater = updater;
     this.client = client;
     this.packaged = options.packaged ?? false;
+    this.localBuild = options.channel === "local";
     this.install =
       options.install || (() => updater.quitAndInstall(false, true));
     this.busy = false;
     this.downloadIdleMs = options.downloadIdleMs ?? 120000;
     this.downloadTimer = null;
     this.downloadToken = null;
-    updater.autoDownload = true;
+    updater.autoDownload = !this.localBuild;
     // Downloads are automatic; installation always follows the user's button click.
     updater.autoInstallOnAppQuit = false;
     if ("autoInstallEvent" in updater) updater.autoInstallEvent = "manual";
@@ -84,6 +85,13 @@ class Updates {
     this.downloadTimer.unref?.();
   }
   configure() {
+    if (this.localBuild) {
+      this.set({
+        state: "local",
+        detail: "本地安装包，安装新生成的本地包即可升级",
+      });
+      return false;
+    }
     const repo = this.client.config().releaseRepo;
     if (!repo) {
       this.set({

@@ -9,3 +9,4 @@
 - Validate citations against current versions. Never count a chat reply or webhook acceptance as persisted business completion.
 - Internal development uses ordinary Hermes tools and filesystem access. Do not add plugin authorization hooks, import path/size restrictions, file hash rechecks, or courseware structure gates. Keep source version checks and deterministic business completion.
 - Test meaningful invariants and the real Hermes tool surface. Distinguish synthetic-data tests, real ASR and real classroom acceptance.
+- For desktop-client deliveries, also build a local Windows installer with `npm run pack:local` and provide its local file path. Keep local installers in ignored `uploader/release-local/`, with local version labels and GitHub auto-update disabled. GitHub Actions continues to build and publish the official installer with `npm run pack:win`.

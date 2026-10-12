@@ -1,5 +1,15 @@
 # 验收记录
 
+## 2026-10-12 本地安装包与正式发布分开
+
+- 新增 `npm run pack:local`：本机直接生成 Local NSIS x64 安装包，输出到被 Git 忽略的 `uploader/release-local/`。版本通过打包元数据添加 UTC 时间，源码 package.json / lockfile 的 `0.1.0` 不被改写。正式 GitHub Actions 继续使用 `pack:win`、`release/` 和自动递增的稳定版本。
+- 本地包嵌入 local channel，关闭启动/定时 GitHub 检查，关闭自动下载；保存更新仓库、通过实际 preload IPC 请求检查更新也不会访问 GitHub。设置页显示本地版本及“本地包手动升级”。
+- TypeScript/Vite 生产构建和 24 项 Node 核心测试通过，保留正式包自动下载、安装确认、暂停偏好、空闲取消与重试规则；新增本地包修改设置后仍不检查或下载的测试。
+- 实际运行 `release-local/win-unpacked/Hermes Classroom.exe`，使用临时虚构资料：确认 local 版本、更新状态和禁用按钮；拦截实际 autoUpdater 的检查入口，完整复制/传输链路中调用次数为零。复制虚构文件后移除模拟设备目录，仍成功从本地副本传输并获取匹配回执；重启保留队列、暂停偏好和加密凭据。
+- 已生成 `Hermes-Classroom-Local-0.1.0-local.20261012T073114Z-x64-Setup.exe`，长度 114406989 字节，直接从本机安装，不需要 GitHub 下载。没有生成公开更新清单、上传本地包或修改正式发布资产。
+
+本地包与正式包配置相同应用身份及资料目录；本轮运行的是打包后的实际程序，没有执行安装向导或覆盖已安装的正式版，不能以重启测试代替实际覆盖安装验收。没有使用真实录音、调用 ASR、修改正式 Hermes 宿主或系统登录启动配置。
+
 ## 2026-10-12 同仓库 GitHub 自动发布
 
 源码仓库 `buyun00/Relay-teacher-workbench` 经 API 确认为公开，本机已有 Git Credential Manager 登录具有写入和管理权限。未新建安装包仓库、未创建或保存个人发布 Token；发布 job 使用 GitHub 自动注入的同仓库 token，只有该 job 获得 `contents: write`。

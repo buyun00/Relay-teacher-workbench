@@ -40,6 +40,8 @@
 
 桌面客户端可以自动复制并上传录音；可选接收入口 `python -m workbench.ingress` 复用同一教师 Store。已接收但未关联课次的音频会出现在 `teacher_context overview` 和原生会话上下文的 `pending_recordings` 中。录音的课次归属、ASR 和复盘仍由 Hermes 教学工具处理，接收回执不会触发或冒充教学分析完成。客户端与接收入口的开发、发布和验证边界见 [客户端说明](uploader/README.md)。推送客户端相关改动到 main 会自动测试、打包并发布同仓库更新，流程见 [GitHub 发布说明](docs/classroom-client-release.md)。
 
+本地开发交付还会在 `uploader` 运行 `npm run pack:local`，生成 `release-local/` 中的 Local 安装包，直接从本机安装测试。本地包手动升级；GitHub 正式包继续自动更新。两种构建目录和版本标识分开，资料仍保存在安装目录之外。
+
 网页/消息平台入口尚未绑定这个教师 profile，后续接入口时必须指向同一教师资料空间。
 
 ## 数据格式

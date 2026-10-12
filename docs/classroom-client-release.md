@@ -7,6 +7,8 @@
 ```mermaid
 flowchart LR
     A[网页中修改和预览] --> B[提交并 push 到 main]
+    A --> L[本机 pack:local 生成本地 EXE]
+    L --> T[从本机安装测试，手动升级]
     B --> C[自动生成版本 0.1.N]
     C --> D[Windows 测试及打包 EXE]
     D --> E[运行打包程序并校验更新资产]
@@ -20,8 +22,20 @@ flowchart LR
 
 1. 在 `uploader` 运行 `npm run dev`，浏览器迭代；需要实际文件能力时用 `npm run desktop`。
 2. 修改后运行相关测试；完整检查为根目录 Python 测试和 `uploader` 的 `npm run check`。
-3. 提交具体改动并 `git push origin main`。本地 `git commit` 本身不会启动 GitHub 构建。
-4. 查看 [Actions](https://github.com/buyun00/Relay-teacher-workbench/actions/workflows/classroom-client.yml) 的测试、打包和发布结果。全部通过后，在 [Releases](https://github.com/buyun00/Relay-teacher-workbench/releases/latest) 下载安装包。
+3. 每次交付客户端改动，运行 `npm run pack:local`，提供 `uploader/release-local/` 中的新 EXE。从本机直接安装，不等待 GitHub 构建或下载安装包。
+4. 提交具体改动并 `git push origin main`。本地 `git commit` 本身不会启动 GitHub 构建。
+5. 查看 [Actions](https://github.com/buyun00/Relay-teacher-workbench/actions/workflows/classroom-client.yml) 的测试、打包和发布结果。全部通过后，其他电脑使用 [Releases](https://github.com/buyun00/Relay-teacher-workbench/releases/latest) 或正式客户端自动更新。
+
+## 本地安装包与正式发布包
+
+| 用途 | 构建命令（在 uploader） | 输出目录 | 版本与升级 |
+| --- | --- | --- | --- |
+| 本机开发和安装测试 | `npm run pack:local` | `release-local/` | `0.1.0-local.<UTC时间>`，安装新生成的本地包升级，不自动下载 GitHub 更新 |
+| GitHub 正式发布 | Actions 使用 `npm run pack:win` | `release/` | `0.1.N`，公开 Release，客户端后台下载并提醒安装 |
+
+本地构建仅通过 electron-builder 的 extraMetadata 注入本地版本和 channel，不改 package.json / lockfile，也不生成公开更新清单或发布到 GitHub。目录和文件名包含 Local，构建产物都被 Git 忽略；正式 CI 版本编号和发布资产校验维持原有流程。
+
+两种包共用应用身份及仓库外的用户资料目录。手动覆盖安装会保留队列、副本和连接设置；本地包显示“本地包手动升级”，即使保存公开更新仓库或调用检查更新，也不会访问 GitHub。重新安装正式包后恢复自动更新。安装向导实际覆盖升级仍须单独验收。
 
 普通修复无需手工改补丁版本，也无需打标签。`scripts/prepare-ci.cjs` 只在 CI 工作目录更新 package.json / lockfile：主/次版本来自源码，补丁版本是本 workflow 的运行编号。失败、PR 和只构建任务会消耗编号，允许跳号；重新运行同一任务不产生新版本。新功能版本可通过 `npm version minor --no-git-tag-version` 同步 package.json / lockfile，再提交。
 
@@ -41,7 +55,7 @@ PR 只能构建/测试。手动 workflow 默认不发布；选择 main 并勾选
 
 开发电脑需要一次能推送仓库及 workflow 的 GitHub 登录。本机现有 Git Credential Manager 登录已验证有写入和管理权限；命令行 API 操作可在内存中复用，不记录 Token。换电脑时可使用 `gh auth login --hostname github.com --git-protocol https --web`，由浏览器完成登录，不在聊天中提供密码或 Token。
 
-安装版启动时及每 6 小时检查 GitHub；更新自动下载，下载完成后提示用户。持续两分钟没有进展会取消并显示可重试的网络提示。安装必须点击确认，复制/扫描期间会等待，退出窗口不会自行安装。本地队列、音频副本、加密连接配置在用户资料目录，更新保留它们。
+正式安装版启动时及每 6 小时检查 GitHub；更新自动下载，下载完成后提示用户。本地安装包关闭这条下载链路。持续两分钟没有进展会取消并显示可重试的网络提示。安装必须点击确认，复制/扫描期间会等待，退出窗口不会自行安装。本地队列、音频副本、加密连接配置在用户资料目录，更新保留它们。
 
 最初本地 0.1.0 包的更新地址为空，在设置填 `buyun00/Relay-teacher-workbench` 即可接入；后续 CI 包自带该地址。Windows Authenticode 签名尚未配置；之后选择证书或签名服务时再接入相应的签名凭据。
 

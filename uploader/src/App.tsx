@@ -1155,8 +1155,8 @@ function Settings({ snapshot: s, run }: { snapshot: Snapshot; run: Run }) {
               <h3>版本与更新</h3>
               <ArrowDownToLine size={18} />
             </div>
-            <div className="version-value">
-              {s.version}
+            <div className={`version-value${s.update.state === "local" ? " version-value-local" : ""}`}>
+              <strong>{s.version}</strong>
               <span>当前版本</span>
             </div>
             <p>{s.update.detail}</p>
@@ -1168,7 +1168,7 @@ function Settings({ snapshot: s, run }: { snapshot: Snapshot; run: Run }) {
             <button
               className={`button full ${s.update.state === "downloaded" ? "primary" : "secondary"}`}
               disabled={
-                ["checking", "downloading"].includes(s.update.state) ||
+                ["checking", "downloading", "local"].includes(s.update.state) ||
                 (s.update.state === "downloaded" && (s.scanning || !!s.copying))
               }
               onClick={() =>
@@ -1183,7 +1183,9 @@ function Settings({ snapshot: s, run }: { snapshot: Snapshot; run: Run }) {
                 ? "安装更新并重启"
                 : s.update.state === "checking"
                   ? "正在检查…"
-                  : "检查更新"}
+                  : s.update.state === "local"
+                    ? "本地包手动升级"
+                    : "检查更新"}
             </button>
             {s.update.state === "downloaded" && (
               <small>本地队列和连接设置会保留。</small>

@@ -50,6 +50,22 @@ test("GitHub updates download automatically but never install on quit or merely 
   assert.equal(client.pauseUploads, false);
 });
 
+test("local installers never check or download GitHub updates, including after settings change", async () => {
+  const { updater, client, updates, installed } = fixture({ channel: "local" });
+  let checks = 0;
+  updater.checkForUpdates = async () => checks++;
+  assert.equal(updater.autoDownload, false);
+  assert.equal(updater.feed, undefined);
+  assert.equal(client.update.state, "local");
+  await updates.check();
+  client.config = () => ({ releaseRepo: "fictional-owner/another-release" });
+  assert.equal(updates.configure(), false);
+  await updates.check();
+  assert.equal(checks, 0);
+  assert.equal(installed(), 0);
+  assert.equal(client.update.state, "local");
+});
+
 test("update install defers until local copying/scanning is finished", async () => {
   const { updater, client, updates, installed } = fixture();
   updater.emit("update-downloaded", { version: "0.1.1" });

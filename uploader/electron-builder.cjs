@@ -5,6 +5,7 @@ const repository =
 const [owner, repo] = repository.split("/");
 module.exports = {
   ...pkg.build,
+  extraMetadata: { classroomBuild: { channel: "release" } },
   electronDist: require("node:path").join(
     __dirname,
     "node_modules",

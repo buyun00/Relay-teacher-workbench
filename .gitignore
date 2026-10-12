@@ -15,5 +15,6 @@ dist/
 *.key
 node_modules/
 uploader/release/
+uploader/release-local/
 uploader/test-results/
 uploader/playwright-report/
