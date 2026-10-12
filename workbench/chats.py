@@ -65,7 +65,9 @@ class Chats:
 
     def list(self):
         with self.store.connect() as db:
-            rows = db.execute("SELECT c.*, (SELECT state FROM desktop_turns WHERE chat_id=c.id ORDER BY rowid DESC LIMIT 1) AS state FROM desktop_chats c ORDER BY updated_at DESC").fetchall()
+            rows = db.execute("SELECT c.*, m.archived_at, COALESCE(m.title_source,'fallback') AS title_source, "
+                              "(SELECT state FROM desktop_turns WHERE chat_id=c.id ORDER BY rowid DESC LIMIT 1) AS state "
+                              "FROM desktop_chats c LEFT JOIN desktop_chat_metadata m ON m.chat_id=c.id ORDER BY c.updated_at DESC").fetchall()
         return {"chats": [dict(row) for row in rows], "workspace_id": self.store.config.workspace_id}
 
     def chat(self, chat_id, db=None):
@@ -73,10 +75,44 @@ class Chats:
         if db is None:
             with self.store.connect() as conn:
                 return self.chat(chat_id, conn)
-        row = db.execute("SELECT * FROM desktop_chats WHERE id=?", (chat_id,)).fetchone()
+        row = db.execute("SELECT c.*,m.archived_at,COALESCE(m.title_source,'fallback') AS title_source "
+                         "FROM desktop_chats c LEFT JOIN desktop_chat_metadata m ON m.chat_id=c.id WHERE c.id=?", (chat_id,)).fetchone()
         if not row:
             raise WorkbenchError("对话不存在")
         return dict(row)
+
+    def archive(self, chat_id, payload):
+        archived = payload.get("archived")
+        if not isinstance(archived, bool):
+            raise WorkbenchError("归档状态无效")
+        with self.store.transaction() as db:
+            chat = self.chat(chat_id, db)
+            if bool(chat["archived_at"]) == archived:
+                return self.read(chat_id)
+            stamp = now()
+            archived_at = stamp if archived else None
+            db.execute("INSERT INTO desktop_chat_metadata(chat_id,archived_at) VALUES(?,?) "
+                       "ON CONFLICT(chat_id) DO UPDATE SET archived_at=excluded.archived_at", (chat_id, archived_at))
+            db.execute("UPDATE desktop_chats SET updated_at=? WHERE id=?", (stamp, chat_id))
+            self._event(db, chat_id, None, "metadata", {"archived_at": archived_at})
+        return self.read(chat_id)
+
+    def auto_title(self, chat_id, title):
+        # A model suggests the name; deterministic code validates and persists it once.
+        if not isinstance(title, str):
+            return False
+        title = title.strip().strip('"“”\'')
+        if not 2 <= len(title) <= 28 or any(ord(c) < 32 for c in title) or title in {"新任务", "新对话", "在吗", "你好", "初步沟通", "了解需求"}:
+            return False
+        with self.store.transaction() as db:
+            chat = self.chat(chat_id, db)
+            if chat["title_source"] == "ai":
+                return False
+            db.execute("UPDATE desktop_chats SET title=?,updated_at=? WHERE id=?", (title, now(), chat_id))
+            db.execute("INSERT INTO desktop_chat_metadata(chat_id,title_source) VALUES(?,'ai') "
+                       "ON CONFLICT(chat_id) DO UPDATE SET title_source='ai'", (chat_id,))
+            self._event(db, chat_id, None, "metadata", {"title": title, "title_source": "ai"})
+        return True
 
     def read(self, chat_id):
         with self.store.connect() as db:
@@ -113,6 +149,8 @@ class Chats:
                 if old["chat_id"] != chat_id or old["content"] != content:
                     raise WorkbenchError("消息标识已用于另一条消息")
                 return dict(old)
+            if chat["archived_at"]:
+                raise WorkbenchError("请先取消归档再继续对话")
             if db.execute("SELECT 1 FROM desktop_turns WHERE chat_id=? AND state IN ('queued','running','cancelling')", (chat_id,)).fetchone():
                 raise WorkbenchError("当前回复正在进行，请等待或停止后发送")
             db.execute("INSERT INTO desktop_turns(id,chat_id,content,created_at,updated_at) VALUES(?,?,?,?,?)",

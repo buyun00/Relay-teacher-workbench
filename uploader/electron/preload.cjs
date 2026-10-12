@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("classroom", {
   selectFiles: () => ipcRenderer.invoke("client:select-files"),
   createTask: () => ipcRenderer.invoke("client:create-task"),
   saveTaskDraft: (input) => ipcRenderer.invoke("client:task-draft", input),
+  archiveTask: (input) => ipcRenderer.invoke("client:task-archive", input),
   readChat: (id) => ipcRenderer.invoke("client:chat-read", id),
   sendChat: (input) => ipcRenderer.invoke("client:chat-send", input),
   selectChatModel: (input) => ipcRenderer.invoke("client:chat-model", input),

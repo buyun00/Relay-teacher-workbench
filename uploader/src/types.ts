@@ -121,6 +121,8 @@ export interface LocalTask {
   createdAt: string;
   updatedAt: string;
   state?: ChatTurn["state"] | null;
+  archived_at?: string | null;
+  title_source?: "fallback" | "ai";
 }
 export interface ClientAPI {
   snapshot(): Promise<Snapshot>;
@@ -132,6 +134,7 @@ export interface ClientAPI {
   selectFiles(): Promise<ManualImportResult | null>;
   createTask(): Promise<LocalTask>;
   saveTaskDraft(input: { id: string; draft: string }): Promise<unknown>;
+  archiveTask(input: { id: string; archived: boolean }): Promise<unknown>;
   readChat(id: string): Promise<ChatView>;
   sendChat(input: { id: string; content: string }): Promise<unknown>;
   selectChatModel(input: { id: string; modelId: string }): Promise<ChatView>;
@@ -163,7 +166,8 @@ export interface ChatEvent {
 }
 export interface ChatView {
   chat: { id: string; title: string; hermes_session_id: string; native_tip: string;
-    route_state: "triage" | "locked"; model_id: string | null; route_reason: string | null; };
+    route_state: "triage" | "locked"; model_id: string | null; route_reason: string | null;
+    archived_at?: string | null; title_source?: "fallback" | "ai"; };
   turns: ChatTurn[]; events: ChatEvent[]; cursor: number; workspace_id: string;
   connection?: "online" | "offline"; connectionError?: string | null;
 }

@@ -19,7 +19,7 @@ function applyEvent(view, event) {
   }
   if (kind === "delta" && turn) turn.answer += p.text;
   if (["state", "done", "model"].includes(kind) && turn) Object.assign(turn, p);
-  if (kind === "route") Object.assign(view.chat, p);
+  if (["route", "metadata"].includes(kind)) Object.assign(view.chat, p);
   if (["tool_start", "tool_end", "status", "route", "notice", "commentary"].includes(kind)) view.events.push(event);
   view.cursor = event.seq;
   view.chat.updated_at = event.at;
@@ -37,7 +37,7 @@ class ChatTransport {
     this.lifecycle = new AbortController();
     this.syncing = null;
     this.operations = new Set();
-    for (const name of ["read", "send", "model", "cancel", "sync"]) {
+    for (const name of ["read", "send", "model", "cancel", "sync", "archive"]) {
       const method = this[name].bind(this);
       this[name] = (...args) => {
         const operation = Promise.resolve().then(() => method(...args));
@@ -192,6 +192,16 @@ class ChatTransport {
     return this.read(id);
   }
   async cancel(id) { return this.request("/v1/chats/" + id + "/cancel", {}); }
+  async archive({ id, archived }) {
+    const scope = this.scope();
+    await this.request("/v1/chats", { id });
+    if (scope !== this.scope()) throw new Error("连接空间已改变，请重新打开对话");
+    const view = await this.request("/v1/chats/" + id + "/archive", { archived });
+    if (scope !== this.scope()) throw new Error("连接空间已改变，归档状态会在原空间同步");
+    view.connection = "online";
+    this.save(view, scope);
+    return view;
+  }
   detach() { this.controller?.abort(); this.controller = null; this.watching = null; }
   reset() { this.detach(); this.views.clear(); this.models = []; }
   async close() { this.detach(); this.lifecycle.abort(); await Promise.allSettled([...this.operations, ...this.loops, this.syncing].filter(Boolean)); }

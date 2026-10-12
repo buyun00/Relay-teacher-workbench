@@ -39,3 +39,37 @@ test("a lost acceptance reply retries the same durable message identity, includi
   assert.equal(ids.length, 2);
   assert.equal(ids[0], ids[1]);
 });
+
+test("replayed title and archive metadata preserve the existing answer and fixed model", () => {
+  const view = { chat: { id: "fictional", title: "在吗", model_id: "gpt-6-astra", route_state: "locked" },
+    turns: [{ id: "fictional-turn", answer: "虚构保存内容" }], events: [], cursor: 0 };
+  const metadata = { seq: 1, kind: "metadata", chat_id: "fictional", turn_id: null,
+    payload: { title: "虚构对数课备课", title_source: "ai", archived_at: "2026-10-13T00:00:00Z" } };
+  applyEvent(view, metadata); applyEvent(view, metadata);
+  assert.equal(view.chat.title, "虚构对数课备课");
+  assert.equal(view.chat.model_id, "gpt-6-astra");
+  assert.equal(view.turns.length, 1); assert.equal(view.turns[0].answer, "虚构保存内容");
+  applyEvent(view, { ...metadata, seq: 2, payload: { archived_at: null } });
+  assert.equal(view.chat.archived_at, null);
+});
+
+test("server archive cache survives restart and restoring retains the conversation identity", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "fictional-chat-archive-"));
+  const db = new QueueDatabase(root);
+  let archivedAt = null;
+  const fetcher = async (url, options) => {
+    if (url.endsWith('/archive')) archivedAt = JSON.parse(options.body).archived ? "2026-10-13T00:00:00Z" : null;
+    return Response.json({ chat: { id: "fictional", title: "虚构备课", archived_at: archivedAt, hermes_session_id: "fictional-native" },
+      turns: [{ id: "fictional-turn", state: "completed", answer: "虚构旧答案" }], events: [], cursor: 1 });
+  };
+  const make = () => new ChatTransport(db, () => ({ endpoint: "http://fictional.invalid", workspaceId: "fictional" }), () => "", () => {}, () => {}, fetcher);
+  let client = make();
+  t.after(async () => { await client.close(); db.close(); await fs.rm(root, { recursive: true, force: true }); });
+  await client.archive({ id: "fictional", archived: true });
+  await client.close(); client = make();
+  assert.equal(client.tasks()[0].archived_at, archivedAt);
+  assert.equal(client.cached("fictional").turns[0].answer, "虚构旧答案");
+  const view = await client.archive({ id: "fictional", archived: false });
+  assert.equal(view.chat.hermes_session_id, "fictional-native");
+  assert.equal(client.tasks()[0].archived_at, null);
+});

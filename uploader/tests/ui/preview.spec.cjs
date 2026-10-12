@@ -46,6 +46,32 @@ test("recording page shows device, pending files and upload status with manual m
   await expect(panel).toContainText("正在上传");
 });
 
+test("welcome is centered and named conversations can be archived and restored with their draft", async ({ page }) => {
+  await page.goto("http://127.0.0.1:5178");
+  const hero = await page.locator('.conversation-empty').boundingBox();
+  const area = await page.locator('.conversation').boundingBox();
+  expect(Math.abs(hero.x + hero.width / 2 - area.x - area.width / 2)).toBeLessThan(2);
+  expect(Math.abs(hero.y + hero.height / 2 - area.y - area.height / 2)).toBeLessThan(2);
+  await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  await page.getByLabel('消息草稿').fill('虚构问候：在吗');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeVisible({timeout:10000});
+  await page.getByLabel('消息草稿').fill('虚构高一数学：制作对数函数教学提纲');
+  await page.getByLabel('消息草稿').press('Enter');
+  await expect(page.getByRole('navigation', {name:'任务列表'})).toContainText('对数函数教学备课');
+  await page.getByRole('button', {name:'停止回复',exact:true}).click();
+  await page.getByLabel('消息草稿').fill('虚构未发送草稿，应随对话保留');
+  await page.getByRole('button', {name:'归档对话：对数函数教学备课',exact:true}).click();
+  await expect(page.getByRole('navigation', {name:'任务列表'})).not.toContainText('对数函数教学备课');
+  await page.getByRole('button', {name:'已归档对话',exact:true}).click();
+  await expect(page.getByRole('navigation', {name:'任务列表'})).toContainText('对数函数教学备课');
+  await expect(page.getByLabel('消息草稿')).toBeDisabled();
+  await page.getByRole('button', {name:'恢复对话：对数函数教学备课',exact:true}).click();
+  await expect(page.getByLabel('消息草稿')).toHaveValue('虚构未发送草稿，应随对话保留');
+  await expect(page.locator('.chat-turn')).toHaveCount(2);
+  await expect(page.getByText('已停止',{exact:true})).toBeVisible();
+});
+
 test("settings stay in a dialog, keep browser credentials out of storage and use one Hremes reference", async ({ page }) => {
   await page.goto("http://127.0.0.1:5178");
   await page.getByRole("button", { name: "设置", exact: true }).click();

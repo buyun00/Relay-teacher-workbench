@@ -17,11 +17,15 @@ test("local task drafts survive restart independently of the recording queue and
   const second = client.createTask();
   const draft = "虚构任务草稿：整理课堂录音\n尚未发送到任何对话服务。";
   client.saveTaskDraft({ id: first.id, draft });
+  await client.archiveTask({ id: first.id, archived: true });
   assert.throws(() => client.saveTaskDraft({ id: "fictional-unknown-task", draft }), /不存在/);
   await client.close();
   client = new ClassroomClient(path.join(root, "client"), { getVolumes: async () => [] });
   const state = client.snapshot();
   assert.equal(state.tasks.find((task) => task.id === first.id).draft, draft);
+  assert.ok(state.tasks.find((task) => task.id === first.id).archived_at);
+  await client.archiveTask({ id: first.id, archived: false });
+  assert.equal(client.snapshot().tasks.find((task) => task.id === first.id).archived_at, null);
   assert.equal(state.tasks.find((task) => task.id === second.id).draft, "");
   assert.equal(state.files.length, 1);
   assert.equal(state.files[0].state, "queued");

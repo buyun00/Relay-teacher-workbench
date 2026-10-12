@@ -115,6 +115,7 @@ function handlers() {
   handle("snapshot", () => client.snapshot());
   handle("create-task", () => client.createTask());
   handle("task-draft", (input) => client.saveTaskDraft(input));
+  handle("task-archive", (input) => client.archiveTask(input));
   handle("chat-read", (id) => client.readChat(id));
   handle("chat-send", async (input) => {
     const turn = await client.chat.send(input);

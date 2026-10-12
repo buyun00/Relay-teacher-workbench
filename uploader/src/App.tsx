@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
+  Archive, ArchiveRestore, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen, GraduationCap,
   LoaderCircle, MessageSquare, Mic, Pause, Play, Plus, Settings2,
   UploadCloud, X,
 } from "lucide-react";
@@ -28,9 +28,11 @@ export function App() {
   const [settings, setSettings] = useState(false);
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [fatal, setFatal] = useState("");
   const [toast, setToast] = useState<{ message: string; error: boolean } | null>(null);
-  const task = s?.tasks.find((item) => item.id === taskId) || s?.tasks[0];
+  const visibleTasks = s?.tasks.filter((item) => !!item.archived_at === showArchived) || [];
+  const task = visibleTasks.find((item) => item.id === taskId) || visibleTasks[0];
   useEffect(() => {
     let live = true;
     void bridge.snapshot().then((value) => {
@@ -67,9 +69,14 @@ export function App() {
     void run(async () => {
       const created = await bridge.createTask();
       setTaskId(created.id);
+      setShowArchived(false);
       setPage("chat");
     }).finally(() => setCreating(false));
   };
+  const archiveTask = (id: string, archived: boolean) => void run(async () => {
+    await bridge.archiveTask({ id, archived });
+    if (!archived) { setShowArchived(false); setTaskId(id); setPage("chat"); }
+  }, archived ? "对话已归档，随时可以恢复" : "对话已恢复");
   const addFiles = async () => {
     setAdding(true);
     try {
@@ -89,18 +96,27 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="app-name">课堂连接</div>
+        <div className="app-name"><span className="app-mark"><GraduationCap size={21} strokeWidth={1.7} /></span>课堂连接</div>
         <button className="new-task" disabled={creating} onClick={newTask}>{creating ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}新建任务</button>
-        <div className="task-label">任务</div>
+        <div className="task-label">{showArchived ? "已归档" : "对话"}<span>{visibleTasks.length || ""}</span></div>
         <nav className="task-list" aria-label="任务列表">
-          {s.tasks.length ? s.tasks.map((item) => (
-            <button key={item.id} title={item.title} className={"task-item " + (page === "chat" && task?.id === item.id ? "selected" : "")}
-              onClick={() => { setTaskId(item.id); setPage("chat"); }}>
+          {visibleTasks.length ? visibleTasks.map((item) => (
+            <div key={item.id} data-chat-id={item.id} className={"task-row " + (page === "chat" && task?.id === item.id ? "selected" : "")}>
+            <button title={item.title} className="task-item" onClick={() => { setTaskId(item.id); setPage("chat"); }}>
               {["queued", "running", "cancelling"].includes(item.state || "") ? <LoaderCircle size={15} className="spin" /> : <MessageSquare size={15} />}<span>{item.title}</span>
             </button>
-          )) : <p className="no-tasks">还没有任务</p>}
+            <button className="task-action" title={showArchived ? "恢复对话" : "归档对话"}
+              aria-label={(showArchived ? "恢复对话：" : "归档对话：") + item.title}
+              onClick={() => archiveTask(item.id, !showArchived)}>{showArchived ? <ArchiveRestore size={15} /> : <Archive size={15} />}</button>
+            </div>
+          )) : <p className="no-tasks">{showArchived ? "还没有归档的对话" : "还没有对话，从一个想法开始"}</p>}
         </nav>
         <div className="sidebar-footer">
+          <button className={"sidebar-link archive-toggle " + (showArchived ? "selected" : "")} aria-label={showArchived ? "返回对话" : "已归档对话"}
+            onClick={() => { setShowArchived(!showArchived); setTaskId(null); setPage("chat"); }}>
+            {showArchived ? <MessageSquare size={17} /> : <Archive size={17} />}<span>{showArchived ? "返回对话" : "已归档"}</span>
+            {!showArchived && s.tasks.some((item) => item.archived_at) && <b>{s.tasks.filter((item) => item.archived_at).length}</b>}
+          </button>
           <button className={"sidebar-link " + (page === "uploads" ? "selected" : "")} aria-label="录音上传"
             onClick={() => setPage("uploads")}>
             <FileAudio2 size={17} /><span>录音上传</span>{pending > 0 && <b aria-hidden="true">{pending}</b>}

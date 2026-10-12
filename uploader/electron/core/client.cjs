@@ -236,6 +236,26 @@ class ClassroomClient extends EventEmitter {
     }
     return view;
   }
+  async archiveTask({ id, archived }) {
+    if (typeof archived !== "boolean") throw new Error("归档状态无效");
+    const tasks = this.db.setting("localTasks", []);
+    const task = tasks.find((t) => t.id === id);
+    const remote = this.chat.tasks().find((t) => t.id === id);
+    if (!task && !remote) throw new Error("对话不存在");
+    if (task?.chatScope && task.chatScope !== this.chat.scope()) throw new Error("此对话属于另一个教师空间");
+    if (this.config().endpoint) {
+      const view = await this.chat.archive({ id, archived });
+      if (task) {
+        task.chatScope = this.chat.scope();
+        task.archived_at = view.chat.archived_at;
+        this.db.setSetting("localTasks", tasks);
+      }
+    } else {
+      task.archived_at = archived ? iso() : null;
+      this.db.setSetting("localTasks", tasks);
+    }
+    this.changed();
+  }
   saveTaskDraft({ id, draft }) {
     if (typeof draft !== "string") throw new Error("消息草稿无效");
     const tasks = this.db.setting("localTasks", []);

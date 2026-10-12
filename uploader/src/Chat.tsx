@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, CircleAlert, Copy, LoaderCircle, MessageSquare, Square } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Check, ChevronDown, CircleAlert, Copy, LoaderCircle, MessageSquare, Sparkles, Square } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -26,6 +26,7 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null), stick = useRef(true);
   const taskId = task?.id;
+  const archived = !!task?.archived_at;
   const selectedId = useRef(taskId);
   selectedId.current = taskId;
   const currentDraft = useRef(draft);
@@ -58,7 +59,7 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
   }, [view?.cursor, loading, taskId]);
   const send = async (retryContent?: string) => {
     const content = retryContent ?? draft;
-    if (!taskId || !content.trim() || busy || sending || disabled) return;
+    if (!taskId || !content.trim() || busy || sending || disabled || archived) return;
     setSending(true);
     stick.current = true;
     try {
@@ -73,8 +74,9 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
   return <div className="chat-view">
     <header className="pane-header chat-header">
       <h1>{task?.title || "新任务"}</h1>
+      {archived && <span className="archive-badge"><Archive size={12} />已归档</span>}
       {task && <label className="model-choice"><span className="sr-only">对话模型</span>
-        <select aria-label="对话模型" value={view?.chat.model_id || "auto"} disabled={disabled || busy || sending || loading}
+        <select aria-label="对话模型" value={view?.chat.model_id || "auto"} disabled={disabled || busy || sending || loading || archived}
           onChange={(e) => { const modelId = e.target.value, id = task.id; void run(async () => {
             const next = await bridge.selectChatModel({ id, modelId });
             if (selectedId.current === id) setView(next);
@@ -88,17 +90,17 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
       {view.chat.route_state === "locked" ? <Check size={13} /> : <MessageSquare size={13} />}
       <span title={view.chat.route_reason}>{view.chat.route_reason.slice(0, 70)}{view.chat.route_reason.length > 70 && "…"}{view.chat.route_state === "locked" && " · 已固定到这段对话"}</span>
     </div>}
-    <div className="conversation" ref={scroll} onScroll={() => {
+    <div className={"conversation " + (!view?.turns.length ? "is-empty" : "")} ref={scroll} onScroll={() => {
       const el = scroll.current;
       if (el) { stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; setAtBottom(stick.current); }
     }}>
       {!view?.turns.length && <div className="conversation-empty">
-        {loading ? <LoaderCircle size={27} className="spin" /> : <MessageSquare size={27} strokeWidth={1.3} />}
-        <h2>{!task ? "从左侧新建一个任务" : loading ? "正在打开对话" : "今天想完成什么？"}</h2>
-        <p>{task ? "直接说出需求。DS 会先了解你想做什么，再为这段对话选择合适的模型。" : "一段对话处理一件事，也可以在录音上传页添加课堂录音。"}</p>
+        <div className="welcome-orb">{loading ? <LoaderCircle size={30} className="spin" /> : <Sparkles size={30} strokeWidth={1.5} />}</div>
+        <h2>{loading ? "正在打开对话" : "今天想完成什么？"}</h2>
+        <p>{archived ? "这段对话已归档，恢复后可以继续。" : "说说你的想法，我们一起把它做出来。"}</p>
       </div>}
       {error && <div className="chat-error" role="alert">{error}<button className="text-button" onClick={() => void load()}>重试连接</button></div>}
-      <div className="message-list">
+      {!!view?.turns.length && <div className="message-list">
         {view?.turns.map((turn) => <article className="chat-turn" key={turn.id}>
           <div className="user-message"><div>{turn.content}</div></div>
           <div className="assistant-message">
@@ -119,7 +121,7 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
             </div>}
           </div>
         </article>)}
-      </div>
+      </div>}
     </div>
     {view?.connectionError && <div className="chat-connection" role="status">{view.connectionError}</div>}
     {!atBottom && <button className="latest-button" aria-label="回到最新消息" onClick={() => {
@@ -127,13 +129,13 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
     }}><ArrowDown size={16} /></button>}
     <div className="composer-area">
       <div className="composer">
-        <textarea aria-label="消息草稿" autoFocus value={draft} disabled={!task || disabled}
-          placeholder={task ? "发消息，说说你想做什么…" : "先新建一个任务"}
+        <textarea aria-label="消息草稿" autoFocus value={draft} disabled={!task || disabled || archived}
+          placeholder={archived ? "恢复对话后继续聊天" : task ? "发消息，说说你想做什么…" : "新建一个任务，开始聊天"}
           onChange={(e) => { const value = e.target.value; setDraft(value); if (task) void run(() => bridge.saveTaskDraft({ id: task.id, draft: value })); }}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send(); } }} />
         <div className="composer-bottom"><small>{s.mode === "preview" ? "浏览器演示使用虚构回复" : "Enter 发送 · Shift + Enter 换行"}</small>
           {busy ? <button className="send-button" aria-label="停止回复" disabled={tail?.state === "cancelling"} onClick={() => void run(() => bridge.cancelChat(task!.id))}><Square size={12} fill="currentColor" /></button>
-            : <button className="send-button" aria-label="发送消息" disabled={disabled || !task || !draft.trim() || sending || loading} onClick={() => void send()}>
+            : <button className="send-button" aria-label="发送消息" disabled={disabled || archived || !task || !draft.trim() || sending || loading} onClick={() => void send()}>
               {sending ? <LoaderCircle size={17} className="spin" /> : <ArrowUp size={18} />}
             </button>}
         </div>

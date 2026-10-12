@@ -200,6 +200,12 @@ class DesktopIngressCase(unittest.TestCase):
             stopped = call("/v1/chats/fictional-http/cancel", {"workspace_id": "fictional-demo"})
             self.assertEqual(stopped["turns"][0]["state"], "cancelled")
             self.assertEqual(stopped["turns"][0]["answer"], "虚构增量输出")
+            archived = call("/v1/chats/fictional-http/archive", {"archived": True, "workspace_id": "fictional-demo"})
+            self.assertTrue(archived["chat"]["archived_at"])
+            self.assertEqual(call("/v1/chats")["chats"][0]["archived_at"], archived["chat"]["archived_at"])
+            restored = call("/v1/chats/fictional-http/archive", {"archived": False, "workspace_id": "fictional-demo"})
+            self.assertIsNone(restored["chat"]["archived_at"])
+            self.assertEqual(restored["turns"], stopped["turns"])
         finally:
             server.shutdown()
             server.server_close()

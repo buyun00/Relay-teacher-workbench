@@ -330,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.server.chats.models()
             elif parsed.path == "/v1/chats" and self.command in {"GET", "POST"}:
                 result = self.server.chats.list() if self.command == "GET" else self.server.chats.create(self.chat_payload())
-            elif match := re.fullmatch(r"/v1/chats/([A-Za-z0-9_-]+)(?:/(turns|model|cancel|events))?", parsed.path):
+            elif match := re.fullmatch(r"/v1/chats/([A-Za-z0-9_-]+)(?:/(turns|model|cancel|events|archive))?", parsed.path):
                 chat_id, action = match.groups()
                 chats = self.server.chats
                 if self.command == "GET" and not action:
@@ -339,6 +339,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = chats.submit(chat_id, self.chat_payload())
                 elif self.command == "POST" and action == "model":
                     result = chats.select_model(chat_id, self.chat_payload())
+                elif self.command == "POST" and action == "archive":
+                    result = chats.archive(chat_id, self.chat_payload())
                 elif self.command == "POST" and action == "cancel":
                     self.chat_payload()
                     result = chats.cancel(chat_id)

@@ -129,3 +129,7 @@ CREATE TABLE IF NOT EXISTS desktop_chat_events(
   turn_id TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL, at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS desktop_chat_events_cursor ON desktop_chat_events(chat_id,seq);
+CREATE TABLE IF NOT EXISTS desktop_chat_metadata(
+  chat_id TEXT PRIMARY KEY REFERENCES desktop_chats(id), archived_at TEXT,
+  title_source TEXT NOT NULL DEFAULT 'fallback', CHECK(title_source IN ('fallback','ai'))
+);

@@ -190,6 +190,13 @@ function browserPreview(): ClientAPI {
       emit();
     },
     async readChat(id) { return structuredClone(chatView(id)); },
+    async archiveTask({ id, archived }) {
+      const task = state.tasks.find((t) => t.id === id);
+      if (!task) throw new Error("对话不存在");
+      task.archived_at = archived ? new Date().toISOString() : null;
+      chatView(id).chat.archived_at = task.archived_at;
+      chatEmit(chatView(id)); emit();
+    },
     async openLink(url) { window.open(url, "_blank", "noopener,noreferrer"); },
     async copyText(value) { await navigator.clipboard.writeText(value); },
     subscribeChat(fn) { chatListeners.add(fn); return () => { chatListeners.delete(fn); }; },
@@ -218,6 +225,8 @@ function browserPreview(): ClientAPI {
       if (view.chat.route_state === "triage" && view.turns.length >= 2) {
         view.chat.model_id = "gpt-6-astra"; view.chat.route_state = "locked";
         view.chat.route_reason = "虚构分类：数学备课适合 GPT-6 Astra"; turn.model_id = "gpt-6-astra";
+        view.chat.title = "对数函数教学备课"; view.chat.title_source = "ai";
+        if (task) { task.title = view.chat.title; task.title_source = "ai"; }
       }
       const event = (kind: string, payload: ChatView["events"][number]["payload"]) => {
         view.events.push({ seq: ++view.cursor, chat_id: id, turn_id: turn.id, kind, payload, at: new Date().toISOString() });
