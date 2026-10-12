@@ -49,3 +49,17 @@ test("settings stay in a dialog, keep browser credentials out of storage and use
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+test("saved recording reports open inside the upload page without adding a navigation page", async ({ page }) => {
+  await page.goto("http://127.0.0.1:5178");
+  await page.getByRole("button", { name: "录音上传", exact: true }).click();
+  await page.locator(".file-details summary").click();
+  await expect(page.locator(".file-row").filter({ hasText: "虚构录音_20261012_100000.wav" })).toContainText("处理完成");
+  await page.getByRole("button", { name: "查看结果", exact: true }).click();
+  const result = page.getByRole("dialog", { name: "录音处理结果" });
+  await expect(result).toContainText("虚构复盘示例");
+  await expect(result).toContainText("虚构备课示例");
+  await page.keyboard.press("Escape");
+  await expect(result).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "录音上传", exact: true })).toBeVisible();
+});

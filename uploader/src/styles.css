@@ -135,3 +135,10 @@ details[open] > summary svg { transform: rotate(180deg); }
   .toast { left: calc(205px + (100vw - 205px) / 2); max-width: calc(100vw - 250px); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+ .file-actions { display: flex; justify-content: flex-end; padding: 8px 0; }
+ .results-dialog { width: min(860px, calc(100vw - 80px)); }
+ .results-content { overflow: auto; padding: 0 26px 26px; }
+ .results-content article { padding: 20px 0; border-top: 1px solid var(--line, #e3e5e1); }
+ .results-content h3 { font-size: 18px; margin: 10px 0 16px; }
+ .results-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
+ .report-kind { font-size: 12px; color: #627164; }

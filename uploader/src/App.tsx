@@ -5,12 +5,14 @@ import {
   UploadCloud, X,
 } from "lucide-react";
 import { bridge } from "./bridge";
-import type { Recording, Snapshot } from "./types";
+import type { Recording, RecordingResults, Snapshot } from "./types";
 
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 const size = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(1) + " KB";
 const fileLabel = (file: Recording) => {
-  if (file.state === "received") return "已上传";
+  if (file.state === "received") return ({ queued: "等待处理", transcribing: "正在转写",
+    transcribed: "转写已保存", analyzing: "正在生成复盘", analyzed: "处理完成",
+    stale: "结果需刷新", needs_attention: "处理需检查" } as Record<string, string>)[file.remote?.state || ""] || "已上传";
   if (file.state === "uploading") return "正在上传";
   if (file.state === "retry") return "等待重试";
   if (file.state === "missing") return "本地副本缺失";
@@ -149,6 +151,13 @@ export function App() {
 function Uploads({ snapshot: s, run, openSettings, uploadButton }: {
   snapshot: Snapshot; run: Run; openSettings: () => void; uploadButton: ReactNode;
 }) {
+  const [results, setResults] = useState<{ filename: string; value: RecordingResults } | null>(null);
+  const [reading, setReading] = useState<string | null>(null);
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => { if (e.key === "Escape") setResults(null); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
   const connected = s.devices.filter((device) => device.connected);
   const deviceProblem = connected.find((device) => device.problem)?.problem;
   const uncollected = connected.reduce((total, device) => total + (device.pending || 0), 0);
@@ -156,18 +165,21 @@ function Uploads({ snapshot: s, run, openSettings, uploadButton }: {
   const active = s.files.find((file) => file.state === "uploading");
   const failed = pending.filter((file) => ["attention", "missing"].includes(file.state));
   const complete = s.files.filter((file) => file.state === "received").length;
+  const processing = s.files.find((file) => file.state === "received" && ["queued", "transcribing", "transcribed", "analyzing"].includes(file.remote?.state || ""));
+  const analysisIssue = s.files.some((file) => ["needs_attention", "stale"].includes(file.remote?.state || ""));
+  const analyzed = s.files.filter((file) => file.remote?.workflow?.complete).length;
   const deviceLabel = s.deviceState === "error" ? "设备识别暂不可用" : s.deviceState === "checking" ? "正在检查设备" :
     deviceProblem ? "已接入，读取遇到问题" : connected.length ? "已接入" : s.candidates.length ? "已检测到设备，请选择录音目录" : "未接入";
   const status = s.config.pauseUploads ? "已暂停" : s.copying ? "正在保存录音" : active ? "正在上传" :
     !s.config.endpoint && s.mode !== "preview" && pending.length ? "等待连接设置" :
     failed.length || deviceProblem ? "有录音需要处理" : pending.length ? "等待上传，自动重试" : uncollected ? "正在读取设备录音" :
-    complete ? "全部上传完成" : "等待录音";
+    complete ? processing ? "已上传，" + fileLabel(processing) : analysisIssue ? "已上传，处理需检查" : analyzed === complete ? "上传和处理完成" : "全部上传完成" : "等待录音";
   const progress = active ? Math.min(100, Math.round(active.uploadedBytes / Math.max(1, active.bytes) * 100)) : 0;
   return (
     <div className="upload-view">
       <header className="pane-header"><h1>录音上传</h1>{uploadButton}</header>
       <div className="upload-content">
-        <p className="page-description">插入设备自动上传，或选择本机音频文件。</p>
+        <p className="page-description">插入设备自动上传，或选择本机音频文件。上传后自动转写并保存复盘、备课。</p>
         <section className="status-panel" aria-label="录音上传状态">
           <div className="status-row">
             <div className="status-label"><Mic size={18} /><span>录音设备</span></div>
@@ -201,17 +213,38 @@ function Uploads({ snapshot: s, run, openSettings, uploadButton }: {
         {s.files.length > 0 && <details className="file-details">
           <summary>录音文件（{s.files.length}）<ChevronDown size={15} /></summary>
           <div className="file-list">
+            <div className="file-actions"><button className="text-button" onClick={() => void run(() => bridge.refreshStatus())}>刷新状态</button></div>
             {s.files.map((file) => <div className="file-row" key={file.id}>
               <FileAudio2 size={17} />
               <div className="file-info"><strong title={file.filename}>{file.filename}</strong><small>{file.sourceName} · {size(file.bytes)}</small>
                 {file.error && file.state !== "received" && <p className="file-error">{file.error}</p>}
+                {file.remote?.workflow?.error && <p className="file-error">{file.remote.workflow.error}</p>}
               </div>
               <span className={"file-status " + file.state}>{fileLabel(file)}</span>
+              {!!file.remote?.workflow?.artifacts.length && <button className="text-button" disabled={reading === file.id}
+                onClick={() => void run(async () => {
+                  setReading(file.id);
+                  try { setResults({ filename: file.filename, value: await bridge.readResults(file.id) }); }
+                  finally { setReading(null); }
+                })}>{reading === file.id ? "正在读取…" : "查看结果"}</button>}
               {["attention", "missing", "retry"].includes(file.state) && <button className="text-button" onClick={() => void run(() => bridge.retry(file.id))} aria-label={"重试 " + file.filename}>重试</button>}
             </div>)}
           </div>
         </details>}
       </div>
+      {results && <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setResults(null); }}>
+        <section className="settings-dialog results-dialog" role="dialog" aria-modal="true" aria-labelledby="results-title">
+          <header><h2 id="results-title">录音处理结果</h2><button className="icon-button" aria-label="关闭结果" onClick={() => setResults(null)}><X size={19} /></button></header>
+          <div className="results-content"><p className="muted">{results.filename}</p>
+            {!results.value.complete && <p>处理尚未全部完成，以下为已保存的结果。</p>}
+            {results.value.reports.map((report) => <article key={report.id}>
+              <span className="report-kind">{report.kind === "brief" ? "课堂复盘" : "补充备课"}</span>
+              <h3>{report.title}</h3>{report.warning && <p className="file-error">{report.warning}</p>}
+              <pre>{report.text.split("\n\n---\n来源版本：")[0]}</pre>
+            </article>)}
+          </div>
+        </section>
+      </div>}
     </div>
   );
 }

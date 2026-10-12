@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+import os
 from pathlib import Path
 
 from .config import Config, WorkbenchError
@@ -94,6 +95,8 @@ def register_plugin(ctx, workbench: Workbench | None = None):
         sid = session_id or task_id or "oneshot"
         message = workbench.facts.message(user_message or "教师入口任务", sid, platform, sender_id, turn_id)
         frame = {"message_id": message["id"], "session_id": sid}
+        if os.environ.get("HERMES_RECORDING_WORKFLOW"):
+            frame["recording_workflow"] = json.loads(os.environ["HERMES_RECORDING_WORKFLOW"])
         with lock:
             bindings[sid] = frame
             if task_id:

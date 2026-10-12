@@ -328,18 +328,20 @@ class Transport {
   async tick() {
     if (
       this.busy ||
-      !this.getConfig().endpoint ||
-      this.getConfig().pauseUploads
+      !this.getConfig().endpoint
     )
       return;
     this.busy = true;
     try {
-      const file = this.db.next();
+      const file = this.getConfig().pauseUploads ? null : this.db.next();
       if (file) await this.transfer(file);
       else if (Date.now() >= this.nextStatusAt) {
         this.nextStatusAt = Date.now() + 60000;
         try {
           await this.statuses();
+          const processing = this.db.all().some((f) => f.remote &&
+            ["queued", "transcribing", "transcribed", "analyzing"].includes(JSON.parse(f.remote).state));
+          this.nextStatusAt = Date.now() + (processing ? 5000 : 60000);
         } catch {
           this.connection = {
             state: "offline",
@@ -358,6 +360,23 @@ class Transport {
     if (!file || !["retry", "attention", "queued"].includes(file.state)) return;
     this.db.update(id, { state: "queued", next_try: 0, error: null });
     this.onChange();
+  }
+  async results(id) {
+    const file = this.db.get(id);
+    const config = this.getConfig();
+    if (!file?.receipt || file.endpoint !== config.endpoint || file.workspace_id !== config.workspaceId)
+      throw new TransferError("请连接保存此录音的教师空间", false);
+    const receipt = JSON.parse(file.receipt);
+    const result = await this.request(`/v1/recordings/${file.sha256}/results`);
+    if (result.workspace_id !== config.workspaceId || result.sha256 !== file.sha256 ||
+        result.asset_id !== receipt.asset_id || !Array.isArray(result.reports) ||
+        result.reports.some((r) => !["brief", "preparation"].includes(r.kind) ||
+          typeof r.id !== "string" || typeof r.title !== "string" || typeof r.text !== "string"))
+      throw new TransferError("录音结果与已保存回执不匹配", false);
+    if (result.complete && (result.state !== "analyzed" ||
+        new Set(result.reports.map((r) => r.kind)).size !== 2 || result.reports.some((r) => r.stale)))
+      throw new TransferError("录音处理结果尚未确认完成", false);
+    return result;
   }
   stop() {
     this.controller?.abort();

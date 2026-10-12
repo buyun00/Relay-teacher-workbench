@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import time
 from pathlib import Path
 
 from .config import WorkbenchError
@@ -56,16 +57,25 @@ class Maintenance:
                 if row["state"] == "running":
                     raise WorkbenchError("范围内有执行中的任务，请等其结束后重新生成删除计划")
                 jobs.add(row["id"])
+        removed_workflows, affected_workflows = set(), set()
+        for row in db.execute("SELECT * FROM recording_workflows"):
+            if row["asset_id"] in assets or row["audio_job_id"] in jobs or row["review_id"] in artifacts or row["preparation_id"] in artifacts:
+                if (row["lease_until"] or 0) > time.time():
+                    raise WorkbenchError("范围内有执行中的录音流程，请等其结束后重新生成删除计划")
+                (removed_workflows if row["asset_id"] in assets else affected_workflows).add(row["id"])
         paths = {self.store.one("assets", aid, db)["path"] for aid in assets}
         paths |= {self.store.one("transcripts", tid, db)["path"].rsplit("/", 1)[0] for tid in transcripts}
         paths |= {self.store.one("artifacts", aid, db)["path"] for aid in artifacts if self.store.one("artifacts", aid, db)["path"] not in kept_paths}
         for jid in jobs:
             paths.add("drafts/" + jid)
+        for workflow_id in removed_workflows | affected_workflows:
+            paths.add("drafts/" + workflow_id)
         # Known local backups may contain the deleted scope. Purge them all, clearly in the plan.
         paths |= {str(p.relative_to(self.store.root)) for p in (self.store.root / "backups").iterdir()}
         result = {"lessons": sorted(lessons), "exams": sorted(exams), "events": sorted(events), "scores": sorted(scores),
                   "assets": sorted(assets), "transcripts": sorted(transcripts), "segments": sorted(segments),
-                  "artifacts": sorted(artifacts), "jobs": sorted(jobs), "paths": sorted(paths), "external_copies": self.external_copies()}
+                  "artifacts": sorted(artifacts), "jobs": sorted(jobs), "recording_workflows": sorted(removed_workflows),
+                  "affected_recording_workflows": sorted(affected_workflows), "paths": sorted(paths), "external_copies": self.external_copies()}
         result["confirmation"] = hashlib.sha256(encode(result).encode()).hexdigest()
         return result
 
@@ -89,6 +99,19 @@ class Maintenance:
                     db.execute(f"DELETE FROM {table} WHERE {column} IN ({','.join('?' for _ in ids)})", ids)
             remove("deliveries", plan["jobs"], "job_id")
             remove("deliveries", plan["artifacts"], "artifact_id")
+            remove("recording_workflows", plan["recording_workflows"])
+            for workflow_id in plan["affected_recording_workflows"]:
+                row = self.store.one("recording_workflows", workflow_id, db)
+                db.execute("UPDATE recording_workflows SET state='needs_attention',owner=NULL,lease_until=NULL,"
+                           "audio_job_id=?,review_id=?,preparation_id=?,error=? WHERE id=?",
+                           (None if row['audio_job_id'] in plan['jobs'] else row['audio_job_id'],
+                            None if row['review_id'] in plan['artifacts'] else row['review_id'],
+                            None if row['preparation_id'] in plan['artifacts'] else row['preparation_id'],
+                            '关联资料范围已删除，请核查；不会自动重新提交录音', workflow_id))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='desktop_uploads'").fetchone():
+                for asset_id in plan["assets"]:
+                    sha = self.store.one("assets", asset_id, db)["sha256"]
+                    db.execute("DELETE FROM desktop_uploads WHERE sha256=?", (sha,))
             remove("jobs", plan["jobs"])
             remove("artifacts", plan["artifacts"])
             remove("questions", plan["lessons"], "lesson_id")

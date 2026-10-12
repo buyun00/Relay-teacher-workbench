@@ -100,7 +100,10 @@ class Jobs:
         with self.store.transaction() as db:
             expired = [dict(r) for r in db.execute("SELECT * FROM jobs WHERE state='running' AND lease_until<?", (time.time(),))]
             for row in expired:
-                if row["kind"] in {"audio", "courseware"}:
+                if row["kind"] == "audio" and row["external_id"] and json.loads(row["result"] or "{}").get("transcript_id"):
+                    # Analysis after a saved ASR result is safe to resume without resubmitting audio.
+                    state, reason = "ready", "复盘执行中断，保留转写并等待继续"
+                elif row["kind"] in {"audio", "courseware"}:
                     # No idempotency API on the reused external engines: an interrupted submit
                     # may have succeeded. Never guess and pay for/re-run it automatically.
                     state, reason = "needs_attention", "执行中断；请核查外部任务，避免重复提交"

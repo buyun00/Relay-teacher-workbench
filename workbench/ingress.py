@@ -1,8 +1,4 @@
-"""Optional desktop transfer endpoint; reuses the existing teacher Store.
-
-No ASR/model worker is started here. A receipt means the original is persisted;
-lesson assignment and teaching work continue through the native Hermes tools.
-"""
+"""Recording receiver with optional durable orchestration of existing teacher tools."""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +14,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .artifacts import Artifacts
 from .config import Config, WorkbenchError
-from .storage import Store, encode, now
+from .storage import Store, atomic_write, encode, now
+from .recordings import Recordings, RecordingWorker
 
 
 class ProtocolError(ValueError):
@@ -30,6 +27,7 @@ class ProtocolError(ValueError):
 class DesktopIngress:
     def __init__(self, store: Store):
         self.store = store
+        self.recordings = Recordings(store)
         self.locks: dict[str, threading.Lock] = {}
         self.lock = threading.Lock()
         self.incoming = store.root / "temporary" / "desktop-incoming"
@@ -74,6 +72,8 @@ class DesktopIngress:
                    "received_at": asset["received_at"], "workspace_id": self.store.config.workspace_id}
         db.execute("UPDATE desktop_uploads SET receipt=?,offset=? WHERE upload_id=?",
                    (encode(receipt), row["byte_length"], row["upload_id"]))
+        if self.store.config.auto_process_recordings:
+            self.recordings.enqueue(asset["id"], db)
         self.store.audit(db, "desktop_received", asset["id"], {"upload_id": row["upload_id"]})
 
     def open(self, manifest):
@@ -217,10 +217,25 @@ class DesktopIngress:
                     state = "queued"
                 else:
                     state = "received" if lessons else "awaiting_lesson"
+                workflow = self.recordings.view(asset["id"])
+                if workflow:
+                    state = workflow["state"]
                 items.append({"sha256": sha, "asset_id": asset["id"], "state": state, "lesson_ids": lessons,
                               "transcript_ids": transcripts, "artifact_ids": current_reports, "stale_artifact_ids": stale_reports,
-                              "jobs": jobs})
+                              "jobs": jobs, "workflow": workflow})
         return {"workspace_id": self.store.config.workspace_id, "checked_at": now(), "items": items}
+
+    def results(self, sha):
+        with self.store.connect() as db:
+            asset = db.execute("SELECT id FROM assets WHERE sha256=?", (sha,)).fetchone()
+        if not asset:
+            raise ProtocolError("Recording not found", 404)
+        result = self.recordings.results(asset["id"])
+        result["reports"] = [{key: report[key] for key in
+            ("id", "kind", "title", "text", "sources", "stale", "created_at", "warning")}
+            for report in result["reports"]]
+        return {**result, "sha256": sha, "asset_id": asset["id"],
+                "workspace_id": self.store.config.workspace_id}
 
 
 class IngressServer(ThreadingHTTPServer):
@@ -275,6 +290,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = ingress.open(self.payload())
             elif self.command == "POST" and parsed.path == "/v1/status":
                 result = ingress.statuses(self.payload())
+            elif self.command == "GET" and (match := re.fullmatch(r"/v1/recordings/([0-9a-f]{64})/results", parsed.path)):
+                result = ingress.results(match.group(1))
             elif match := re.fullmatch(r"/v1/uploads/(up_[a-f0-9]{64})(/complete)?", parsed.path):
                 upload_id, complete = match.groups()
                 if self.command == "POST" and complete:
@@ -301,21 +318,39 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Optional desktop recording receiver; no ASR/model scheduler")
+    parser = argparse.ArgumentParser(description="Desktop recording receiver and existing teacher workflow")
     parser.add_argument("--root", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--token-env", default="HERMES_UPLOADER_TOKEN")
+    parser.add_argument("--auto-process", action="store_true", help="Use the configured native teacher profile after receipt")
+    parser.add_argument("--pid-file", type=Path)
     args = parser.parse_args()
     config = Config.load(root=args.root)
+    if args.auto_process:
+        from dataclasses import replace
+        config = replace(config, auto_process_recordings=True)
     server = IngressServer((args.host, args.port), DesktopIngress(Store(config)), os.environ.get(args.token_env, ""))
     print(encode({"listen": server.server_address, "workspace_id": config.workspace_id, "protocol": 1}), flush=True)
+    worker = RecordingWorker(server.ingress.store) if config.auto_process_recordings else None
+    if worker:
+        worker.start()
+    import signal
+    def stop_signal(*_args):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, stop_signal)
+    if args.pid_file:
+        atomic_write(args.pid_file, str(os.getpid()).encode())
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        if worker:
+            worker.stop()
         server.server_close()
+        if args.pid_file:
+            args.pid_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -100,3 +100,13 @@ CREATE INDEX IF NOT EXISTS events_lesson ON events(lesson_id);
 CREATE INDEX IF NOT EXISTS events_student ON events(student_id);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state,lease_until);
 CREATE INDEX IF NOT EXISTS questions_status ON questions(status);
+CREATE TABLE IF NOT EXISTS recording_workflows (
+  id TEXT PRIMARY KEY, asset_id TEXT NOT NULL UNIQUE REFERENCES assets(id),
+  audio_job_id TEXT REFERENCES jobs(id), state TEXT NOT NULL DEFAULT 'queued',
+  owner TEXT, fence INTEGER NOT NULL DEFAULT 0, lease_until REAL,
+  attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
+  review_id TEXT REFERENCES artifacts(id), preparation_id TEXT REFERENCES artifacts(id),
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  CHECK(state IN ('queued','transcribing','analyzing','completed','needs_attention'))
+);
+CREATE INDEX IF NOT EXISTS recording_workflow_state ON recording_workflows(state,lease_until);

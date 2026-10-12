@@ -88,7 +88,7 @@ class Store:
             db.close()
 
     def one(self, table: str, value: str, db=None):
-        allowed = {"classes", "students", "lessons", "assets", "transcripts", "segments", "messages", "events", "questions", "exams", "scores", "artifacts", "jobs"}
+        allowed = {"classes", "students", "lessons", "assets", "transcripts", "segments", "messages", "events", "questions", "exams", "scores", "artifacts", "jobs", "recording_workflows"}
         if table not in allowed:
             raise WorkbenchError("不支持此类资料")
         if db is not None:
@@ -204,6 +204,8 @@ class Store:
         # External processes are not part of a file backup. Require reconciliation.
         with restored.transaction() as db:
             db.execute("UPDATE jobs SET state='needs_attention',owner=NULL,lease_until=NULL,error='从备份恢复，请核查外部执行状态' WHERE state IN ('running','waiting_external')")
+            db.execute("UPDATE recording_workflows SET state='needs_attention',owner=NULL,lease_until=NULL,"
+                       "error='从备份恢复，请核查外部执行状态；不会自动重新提交录音' WHERE state!='completed'")
         return {"path": str(destination), "workspace_id": manifest["workspace_id"]}
 
 

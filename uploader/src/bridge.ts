@@ -75,7 +75,9 @@ function browserPreview(): ClientAPI {
       make(
         1,
         "received",
-        { state: "analyzed", lesson_ids: ["虚构课次 A"] },
+        { state: "analyzed", workflow: { id: "fictional-workflow", state: "analyzed", complete: true,
+          error: null, artifacts: [{ id: "fictional-brief", kind: "brief", title: "虚构复盘" },
+          { id: "fictional-preparation", kind: "preparation", title: "虚构备课" }] } },
         10,
       ),
       make(2, "received", { state: "transcribing" }, 11),
@@ -210,6 +212,12 @@ function browserPreview(): ClientAPI {
           f.remoteCheckedAt = new Date().toISOString();
       });
       log("示例状态已刷新");
+    },
+    async readResults() {
+      return { state: "analyzed", complete: true, reports: [
+        { id: "fictional-brief", kind: "brief", title: "虚构复盘示例", text: "这是一份明确虚构的课堂复盘，仅用于预览界面。\n00:00—00:10：示例课堂片段。", stale: 0, created_at: new Date().toISOString() },
+        { id: "fictional-preparation", kind: "preparation", title: "虚构备课示例", text: "这是一份明确虚构的15分钟补充练习，仅用于预览界面。", stale: 0, created_at: new Date().toISOString() },
+      ] };
     },
     async checkUpdates() {
       state.update = {

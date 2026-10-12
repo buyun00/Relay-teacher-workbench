@@ -20,6 +20,8 @@ class Config:
     courseware_profile: str | None = None
     max_attempts: int = 3
     lease_seconds: int = 300
+    auto_process_recordings: bool = False
+    profile_home: Path | None = None
 
     @classmethod
     def load(cls, root: Path | None = None, home: Path | None = None) -> "Config":
@@ -36,6 +38,8 @@ class Config:
             courseware_profile=raw.get("courseware_profile"),
             max_attempts=int(raw.get("max_attempts", 3)),
             lease_seconds=int(raw.get("lease_seconds", 300)),
+            auto_process_recordings=bool(raw.get("auto_process_recordings", False)),
+            profile_home=home.resolve(),
         )
 
     def input_file(self, value: str) -> Path:

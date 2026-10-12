@@ -163,6 +163,7 @@ function handlers() {
   handle("pause", (paused) => client.pause(paused));
   handle("retry", (id) => client.transport.retry(id));
   handle("health", () => client.transport.health());
+  handle("results", (id) => client.transport.results(id));
   handle("status", async () => {
     await client.transport.health();
     if (client.transport.connection.state === "online")

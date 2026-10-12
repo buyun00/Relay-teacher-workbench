@@ -91,6 +91,7 @@ class Workbench:
                 return self.store.one("questions", question_id)
         elif tool == "teacher_artifact":
             if action == "save":
+                a["workflow"] = context.get("recording_workflow")
                 return self.artifacts.save(**a)
             if action == "read":
                 return self.artifacts.read(**a)

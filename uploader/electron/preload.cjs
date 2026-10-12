@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("classroom", {
   retry: (id) => ipcRenderer.invoke("client:retry", id),
   health: () => ipcRenderer.invoke("client:health"),
   refreshStatus: () => ipcRenderer.invoke("client:status"),
+  readResults: (id) => ipcRenderer.invoke("client:results", id),
   checkUpdates: () => ipcRenderer.invoke("client:check-updates"),
   installUpdate: () => ipcRenderer.invoke("client:install-update"),
   openDataDir: () => ipcRenderer.invoke("client:open-data"),

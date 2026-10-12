@@ -38,6 +38,8 @@ export interface Recording {
     lesson_ids?: string[];
     artifact_ids?: string[];
     jobs?: { id: string; kind: string; state: string }[];
+    workflow?: { id: string; state: RemoteState; error: string | null; complete: boolean;
+      artifacts: { id: string; kind: string; title: string }[] } | null;
   } | null;
   remoteCheckedAt: string | null;
 }
@@ -135,9 +137,16 @@ export interface ClientAPI {
   retry(id: string): Promise<unknown>;
   health(): Promise<unknown>;
   refreshStatus(): Promise<unknown>;
+  readResults(id: string): Promise<RecordingResults>;
   checkUpdates(): Promise<unknown>;
   installUpdate(): Promise<unknown>;
   openDataDir(): Promise<unknown>;
+}
+export interface RecordingResults {
+  state: RemoteState;
+  complete?: boolean;
+  reports: { id: string; kind: "brief" | "preparation"; title: string; text: string;
+    stale: number; warning?: string | null; created_at: string }[];
 }
 declare global {
   interface Window {

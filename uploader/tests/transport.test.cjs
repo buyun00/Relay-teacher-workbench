@@ -275,3 +275,43 @@ test("auth failures are actionable instead of endless automatic retries", async 
   assert.match(db.get(row.id).error, /凭据无效/);
   assert.ok(!JSON.stringify(db.logs()).includes("FICTIONAL TOKEN"));
 });
+
+test("paused uploads still follow persisted processing state using only recording identities", async (t) => {
+  const { db, row } = await fixture(t);
+  const config = { endpoint: "http://fictional.invalid", workspaceId: "teacher", pauseUploads: true };
+  const receipt = { asset_id: "asset_fictional", sha256: row.sha256, workspace_id: "teacher" };
+  db.update(row.id, { state: "received", endpoint: config.endpoint, workspace_id: "teacher", receipt: JSON.stringify(receipt) });
+  const calls = [];
+  const transport = new Transport(db, () => config, () => "", () => {}, async (url, options) => {
+    calls.push({url, options});
+    return new Response(JSON.stringify({ workspace_id: "teacher", items: [
+      { sha256: row.sha256, asset_id: receipt.asset_id, state: "analyzing" },
+    ] }));
+  });
+  await transport.tick();
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].url.endsWith("/v1/status"));
+  assert.deepEqual(JSON.parse(calls[0].options.body), { workspace_id: "teacher", sha256: [row.sha256] });
+  assert.equal(JSON.parse(db.get(row.id).remote).state, "analyzing");
+  assert.ok(transport.nextStatusAt - Date.now() <= 5000);
+});
+
+test("result reads require the accepted recording and both current saved reports for completion", async (t) => {
+  const { db, row } = await fixture(t);
+  const config = { endpoint: "http://fictional.invalid", workspaceId: "teacher" };
+  const receipt = { asset_id: "asset_fictional", sha256: row.sha256, workspace_id: "teacher" };
+  db.update(row.id, { state: "received", endpoint: config.endpoint, workspace_id: "teacher", receipt: JSON.stringify(receipt) });
+  let result = { workspace_id: "teacher", asset_id: receipt.asset_id, sha256: row.sha256, state: "analyzed", complete: true,
+    reports: [{ id: "fictional-brief", kind: "brief", title: "虚构复盘", text: "虚构已保存复盘", stale: 0 }] };
+  const transport = new Transport(db, () => config, () => "", () => {}, async (url, options) => {
+    assert.ok(url.endsWith(`/v1/recordings/${row.sha256}/results`));
+    assert.equal(options.body, undefined);
+    return new Response(JSON.stringify(result));
+  });
+  await assert.rejects(() => transport.results(row.id), /尚未确认完成/);
+  result.reports.push({ id: "fictional-preparation", kind: "preparation", title: "虚构备课", text: "虚构已保存备课", stale: 0 });
+  assert.equal((await transport.results(row.id)).complete, true);
+  result.asset_id = "asset_another";
+  await assert.rejects(() => transport.results(row.id), /回执不匹配/);
+  assert.equal(db.get(row.id).receipt, JSON.stringify(receipt));
+});

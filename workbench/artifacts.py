@@ -12,7 +12,7 @@ class Artifacts:
         self.store = store
         self.facts = Facts(store)
 
-    def save(self, kind: str, title: str, sources: list, text=None, path=None) -> dict:
+    def save(self, kind: str, title: str, sources: list, text=None, path=None, workflow=None) -> dict:
         if kind not in {"brief", "preparation", "exercise", "courseware", "student_summary"}:
             raise WorkbenchError("产物类型无效")
         title = required_text(title, "产物标题", 300)
@@ -55,6 +55,10 @@ class Artifacts:
                 manifest = "\n\n---\n来源版本：\n" + "\n".join(f"- {r['kind']}:{r['id']}@{r['revision']}" for r in refs)
                 atomic_write(self.store.config.stored_file(relative), (text + manifest + "\n").encode())
             db.execute("INSERT INTO artifacts(id,kind,title,path,sources,created_at,validation) VALUES(?,?,?,?,?,?,?)", (aid, kind, title, relative, encode(refs), now(), encode(validation)))
+            if workflow:
+                from .recordings import Recordings
+                Recordings(self.store).attach(workflow, {"id": aid, "kind": kind, "sources": refs,
+                    "stale": 0, "available": True}, db)
             self.store.audit(db, "artifact", aid, {"kind": kind})
         return self.read(aid)
 
