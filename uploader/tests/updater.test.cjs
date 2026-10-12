@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { Updates } = require("../electron/core/updater.cjs");
 
-function fixture() {
+function fixture(options = {}) {
   const updater = new EventEmitter();
   updater.setFeedURL = (feed) => {
     updater.feed = feed;
@@ -32,6 +32,7 @@ function fixture() {
   const updates = new Updates(updater, client, {
     packaged: true,
     install: async () => installed++,
+    ...options,
   });
   return { updater, client, updates, installed: () => installed };
 }
@@ -70,4 +71,67 @@ test("upgrading preserves an explicit upload pause preference", async () => {
   updater.emit("update-downloaded", { version: "0.1.1" });
   await updates.apply();
   assert.equal(client.pauseUploads, true);
+});
+
+test("a stalled public download is cancelled and can be checked again without touching uploads", async () => {
+  const { updater, client, updates, installed } = fixture({
+    downloadIdleMs: 10,
+  });
+  let cancelled = 0;
+  updater.checkForUpdates = async () => {
+    updater.emit("update-available", { version: "0.1.3" });
+    return {
+      cancellationToken: {
+        cancel() {
+          cancelled++;
+          updater.emit("update-cancelled");
+        },
+      },
+      downloadPromise: new Promise(() => {}),
+    };
+  };
+  await updates.check();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(cancelled, 1);
+  assert.equal(client.update.state, "error");
+  assert.equal(client.pauseUploads, undefined);
+  assert.equal(installed(), 0);
+  updater.checkForUpdates = async () => {
+    updater.emit("update-not-available");
+  };
+  await updates.check();
+  assert.equal(client.update.state, "current");
+});
+
+test("completion of an old cancelled attempt cannot disable timeout on the retry", async () => {
+  const { updater, client, updates } = fixture({ downloadIdleMs: 10 });
+  let finishOld;
+  updater.checkForUpdates = async () => {
+    updater.emit("update-available", { version: "0.1.3" });
+    return {
+      cancellationToken: { cancel() {} },
+      downloadPromise: new Promise((resolve) => {
+        finishOld = resolve;
+      }),
+    };
+  };
+  await updates.check();
+  updater.emit("update-cancelled");
+  let cancelled = 0;
+  updater.checkForUpdates = async () => {
+    updater.emit("update-available", { version: "0.1.3" });
+    return {
+      cancellationToken: {
+        cancel() {
+          cancelled++;
+        },
+      },
+      downloadPromise: new Promise(() => {}),
+    };
+  };
+  await updates.check();
+  finishOld();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(cancelled, 1);
+  assert.equal(client.update.state, "error");
 });
