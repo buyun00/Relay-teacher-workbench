@@ -60,7 +60,7 @@ class TeacherCase(unittest.TestCase):
         asset = self.w.invoke("teacher_import", {"action": "document", "path": str(outside), "title": "虚构目录外资料"})
         self.assertEqual(json.loads(asset["provenance"])["title"], "虚构目录外资料")
         self.assertEqual(self.w.store.config.stored_file(asset["path"]).read_bytes(), outside.read_bytes())
-        self.assertEqual(self.w.store.config.stored_file("../other.md"), outside)
+        self.assertTrue(self.w.store.config.stored_file("../other.md").samefile(outside))
         with self.assertRaises(WorkbenchError):
             self.w.store.ingest(str(outside.with_name("missing.md")), "document")
 
