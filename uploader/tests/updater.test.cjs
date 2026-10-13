@@ -1,153 +1,93 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { EventEmitter } = require("node:events");
 const { Updates } = require("../electron/core/updater.cjs");
 
 function fixture(options = {}) {
-  const updater = new EventEmitter();
-  updater.setFeedURL = (feed) => {
-    updater.feed = feed;
-  };
-  updater.checkForUpdates = async () => {
-    updater.emit("checking-for-update");
+  let prepared = null, restarted = 0, checks = 0;
+  const store = {
+    pending: () => prepared,
+    async latest(_repo, signal) { signal.throwIfAborted(); checks++; return { version: "0.1.2" }; },
+    async prepare(manifest, { onProgress }) {
+      onProgress({ progress: 100, downloadedBytes: 73, downloadTotal: 73, updatedFiles: 1, reusedFiles: 20 });
+      return prepared = { manifest };
+    },
   };
   const client = {
-    update: {},
-    importer: { active: null, scanning: false },
-    transport: { busy: false, stop() {} },
-    config: () => ({
-      releaseRepo: "fictional-owner/fictional-public-installer",
-    }),
-    changed() {},
-    db: {
-      setSetting(key, value) {
-        client[key] = value;
-      },
-    },
-    pause(value) {
-      client.pauseUploads = value;
-    },
+    version: "0.1.1", update: {}, importer: { active: null, scanning: false }, sendingChats: new Set(),
+    config: () => ({ releaseRepo: "fictional-owner/fictional-content", pauseUploads: true }),
+    changed() {}, snapshot: () => ({ tasks: [] }),
   };
-  let installed = 0;
-  const updates = new Updates(updater, client, {
-    packaged: true,
-    install: async () => installed++,
-    ...options,
-  });
-  return { updater, client, updates, installed: () => installed };
+  const updates = new Updates(store, client, { packaged: true, restart: async () => restarted++, ...options });
+  return { store, client, updates, restarted: () => restarted, checks: () => checks };
 }
 
-test("GitHub updates download automatically but never install on quit or merely on download", async () => {
-  const { updater, client, updates, installed } = fixture();
-  assert.equal(updater.autoDownload, true);
-  assert.equal(updater.autoInstallOnAppQuit, false);
-  assert.equal(updater.feed.provider, "github");
-  updater.emit("update-downloaded", { version: "0.1.1" });
+test("new content downloads automatically and becomes pending without invoking any installer or restarting on download", async () => {
+  const { store, client, updates, restarted } = fixture();
+  await updates.check();
   assert.equal(client.update.state, "downloaded");
-  assert.equal(installed(), 0);
+  assert.equal(client.update.downloadedBytes, 73);
+  assert.equal(store.pending().manifest.version, "0.1.2");
+  assert.equal(restarted(), 0);
   await updates.apply();
-  assert.equal(installed(), 1);
-  assert.equal(client.pauseUploads, false);
+  assert.equal(restarted(), 1);
+  assert.equal(client.config().pauseUploads, true);
 });
 
-test("local installers never check or download GitHub updates, including after settings change", async () => {
-  const { updater, client, updates, installed } = fixture({ channel: "local" });
-  let checks = 0;
-  updater.checkForUpdates = async () => checks++;
-  assert.equal(updater.autoDownload, false);
-  assert.equal(updater.feed, undefined);
-  assert.equal(client.update.state, "local");
-  await updates.check();
-  client.config = () => ({ releaseRepo: "fictional-owner/another-release" });
-  assert.equal(updates.configure(), false);
-  await updates.check();
-  assert.equal(checks, 0);
-  assert.equal(installed(), 0);
-  assert.equal(client.update.state, "local");
+test("local installers and development previews never access GitHub, including after settings change", async () => {
+  for (const options of [{ channel: "local" }, { packaged: false }]) {
+    const { store, client, updates, checks, restarted } = fixture(options);
+    store.latest = async () => { throw new Error("Local/development must not access GitHub"); };
+    await updates.check();
+    client.config = () => ({ releaseRepo: "fictional-owner/changed" });
+    updates.configure();
+    await updates.check();
+    assert.equal(checks(), 0); assert.equal(restarted(), 0);
+    assert.equal(client.update.state, options.channel ? "local" : "development");
+    await assert.rejects(updates.apply(), /尚未准备/);
+  }
 });
 
-test("update install defers until local copying/scanning is finished", async () => {
-  const { updater, client, updates, installed } = fixture();
-  updater.emit("update-downloaded", { version: "0.1.1" });
+test("immediate activation waits for copying, scanning, or a running chat", async () => {
+  const { client, updates, restarted } = fixture();
+  await updates.check();
   client.importer.active = { filename: "fictional.wav" };
-  await assert.rejects(updates.apply(), /等待本地复制结束/);
-  assert.equal(installed(), 0);
-  client.importer.active = null;
-  client.importer.scanning = true;
-  await assert.rejects(updates.apply(), /等待本地复制结束/);
-  assert.equal(installed(), 0);
+  await assert.rejects(updates.apply(), /等待本地复制/);
+  client.importer.active = null; client.importer.scanning = true;
+  await assert.rejects(updates.apply(), /等待本地复制/);
+  client.importer.scanning = false; client.sendingChats.add("fictional-chat");
+  await assert.rejects(updates.apply(), /回复结束/);
+  client.sendingChats.clear(); client.snapshot = () => ({ tasks: [{ state: "running" }] });
+  await assert.rejects(updates.apply(), /回复结束/);
+  assert.equal(restarted(), 0);
 });
 
-test("upgrading preserves an explicit upload pause preference", async () => {
-  const { updater, client, updates } = fixture();
-  client.config = () => ({
-    releaseRepo: "fictional-owner/fictional-public-installer",
-    pauseUploads: true,
-  });
-  updater.emit("update-downloaded", { version: "0.1.1" });
-  await updates.apply();
-  assert.equal(client.pauseUploads, true);
-});
-
-test("a stalled public download is cancelled and can be checked again without touching uploads", async () => {
-  const { updater, client, updates, installed } = fixture({
-    downloadIdleMs: 10,
-  });
-  let cancelled = 0;
-  updater.checkForUpdates = async () => {
-    updater.emit("update-available", { version: "0.1.3" });
-    return {
-      cancellationToken: {
-        cancel() {
-          cancelled++;
-          updater.emit("update-cancelled");
-        },
-      },
-      downloadPromise: new Promise(() => {}),
-    };
-  };
+test("prepared content survives checks and a later release replaces the pending snapshot", async () => {
+  const { store, client, updates } = fixture();
+  await updates.check(); await updates.check();
+  assert.equal(client.update.state, "downloaded");
+  store.latest = async () => ({ version: "0.1.5" });
   await updates.check();
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.equal(cancelled, 1);
+  assert.equal(store.pending().manifest.version, "0.1.5");
+});
+
+test("incompatible bases fail explicitly and never fall back to installer downloads", async () => {
+  const { store, client, updates, restarted } = fixture();
+  store.latest = async () => { const error = new Error("FICTIONAL incompatible base"); error.code = "BASE_INCOMPATIBLE"; throw error; };
+  store.prepare = async () => { throw new Error("No content should download"); };
+  await updates.check();
+  assert.equal(client.update.state, "incompatible"); assert.equal(restarted(), 0);
+  await assert.rejects(updates.apply(), /尚未准备/);
+});
+
+test("cancelled attempts finish before retry and cannot overwrite a successful later check", async () => {
+  const { store, client, updates } = fixture();
+  store.prepare = async (_manifest, { signal }) => new Promise((_resolve, reject) =>
+    signal.addEventListener("abort", () => reject(new Error("FICTIONAL cancelled")), { once: true }));
+  const first = updates.check();
+  await new Promise(resolve => setImmediate(resolve));
+  updates.cancel(); await first;
   assert.equal(client.update.state, "error");
-  assert.equal(client.pauseUploads, undefined);
-  assert.equal(installed(), 0);
-  updater.checkForUpdates = async () => {
-    updater.emit("update-not-available");
-  };
+  store.prepare = async manifest => { store.pending = () => ({ manifest }); return { manifest }; };
   await updates.check();
-  assert.equal(client.update.state, "current");
-});
-
-test("completion of an old cancelled attempt cannot disable timeout on the retry", async () => {
-  const { updater, client, updates } = fixture({ downloadIdleMs: 10 });
-  let finishOld;
-  updater.checkForUpdates = async () => {
-    updater.emit("update-available", { version: "0.1.3" });
-    return {
-      cancellationToken: { cancel() {} },
-      downloadPromise: new Promise((resolve) => {
-        finishOld = resolve;
-      }),
-    };
-  };
-  await updates.check();
-  updater.emit("update-cancelled");
-  let cancelled = 0;
-  updater.checkForUpdates = async () => {
-    updater.emit("update-available", { version: "0.1.3" });
-    return {
-      cancellationToken: {
-        cancel() {
-          cancelled++;
-        },
-      },
-      downloadPromise: new Promise(() => {}),
-    };
-  };
-  await updates.check();
-  finishOld();
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.equal(cancelled, 1);
-  assert.equal(client.update.state, "error");
+  assert.equal(client.update.state, "downloaded");
 });

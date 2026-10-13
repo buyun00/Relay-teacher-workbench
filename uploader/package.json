@@ -7,17 +7,18 @@
   "description": "课堂连接：设备录音归档、可靠传输和教室操作端",
   "author": "Teacher workbench",
   "license": "UNLICENSED",
-  "main": "electron/main.cjs",
+  "main": "electron/bootstrap.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "desktop": "node scripts/dev.cjs",
     "build": "tsc --noEmit && vite build",
+    "build:content": "node scripts/build-content.cjs",
     "test": "node --test tests/*.test.cjs",
     "test:ui": "playwright test",
     "check": "npm run build && npm test && npm run test:ui",
-    "pack:local": "npm run build && electron-builder --config electron-builder.local.cjs --win nsis --x64 --publish never",
-    "pack:win": "node scripts/configure-release.cjs && npm run build && electron-builder --config electron-builder.cjs --win nsis --x64 --publish never",
-    "pack:dir": "node scripts/configure-release.cjs && npm run build && electron-builder --config electron-builder.cjs --win --x64 --dir --publish never"
+    "pack:local": "node scripts/configure-release.cjs && npm run build && npm run build:content && electron-builder --config electron-builder.local.cjs --win nsis --x64 --publish never",
+    "pack:win": "node scripts/configure-release.cjs && npm run build && npm run build:content && electron-builder --config electron-builder.cjs --win nsis --x64 --publish never",
+    "pack:dir": "node scripts/configure-release.cjs && npm run build && npm run build:content && electron-builder --config electron-builder.cjs --win --x64 --dir --publish never"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
@@ -50,7 +51,8 @@
     "files": [
       "dist/**",
       "electron/**",
-      "package.json"
+      "package.json",
+      "runtime-manifest.json"
     ],
     "asar": true,
     "artifactName": "Hermes-Classroom-${version}-${arch}-Setup.${ext}",

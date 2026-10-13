@@ -150,6 +150,7 @@ function browserPreview(): ClientAPI {
     emit();
   };
   return {
+    runtimeReady: async () => {},
     snapshot: async () => structuredClone(state),
     subscribe(fn) {
       listeners.add(fn);

@@ -283,7 +283,7 @@ function SettingsDialog({ snapshot: s, run, close }: { snapshot: Snapshot; run: 
             <div className="update-settings"><strong className="version-number">当前版本 {s.version}</strong><p className="muted">{s.update.detail}</p>
               <button type="button" className="button secondary" disabled={["local", "checking", "downloading"].includes(s.update.state) || (s.update.state === "downloaded" && (s.scanning || !!s.copying))}
                 onClick={() => void run(() => s.update.state === "downloaded" ? bridge.installUpdate() : bridge.checkUpdates())}>
-                {s.update.state === "local" ? "本地包手动升级" : s.update.state === "downloaded" ? "安装更新并重启" : "检查更新"}
+                {s.update.state === "local" ? "本地包手动升级" : s.update.state === "downloaded" ? "重启启用新内容" : "检查更新"}
               </button>
             </div>
             {s.config.devices.length > 0 && <div className="bound-folders"><h3>录音目录</h3>{s.config.devices.map((device) => <div key={device.id}><span title={device.originalRoot}>{device.originalRoot}</span><button type="button" className="text-button" onClick={() => void run(() => bridge.unbind(device.id))}>解除绑定</button></div>)}</div>}

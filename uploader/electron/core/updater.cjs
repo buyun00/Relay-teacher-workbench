@@ -1,162 +1,78 @@
+const path = require("node:path");
+const { compareVersions } = globalThis.classroomRuntime
+  ? require(path.join(require("electron").app.getAppPath(), "electron/shell/manifest.cjs"))
+  : require("../shell/manifest.cjs");
+
 class Updates {
-  constructor(updater, client, options = {}) {
-    this.updater = updater;
+  constructor(store, client, options = {}) {
+    this.store = store;
     this.client = client;
     this.packaged = options.packaged ?? false;
     this.localBuild = options.channel === "local";
-    this.install =
-      options.install || (() => updater.quitAndInstall(false, true));
+    this.restart = options.restart || (() => { throw new Error("Desktop restart is not configured"); });
+    this.notify = options.notify;
     this.busy = false;
-    this.downloadIdleMs = options.downloadIdleMs ?? 120000;
-    this.downloadTimer = null;
-    this.downloadToken = null;
-    updater.autoDownload = !this.localBuild;
-    // Downloads are automatic; installation always follows the user's button click.
-    updater.autoInstallOnAppQuit = false;
-    if ("autoInstallEvent" in updater) updater.autoInstallEvent = "manual";
-    updater.on("checking-for-update", () =>
-      this.set({ state: "checking", detail: "正在检查 GitHub 上的新版本" }),
-    );
-    updater.on("update-available", (info) =>
-      this.set({
-        state: "downloading",
-        version: info.version,
-        progress: 0,
-        detail: "发现新版本，正在下载",
-      }),
-    );
-    updater.on("download-progress", (progress) => {
-      this.watchDownload();
-      this.set({
-        ...client.update,
-        state: "downloading",
-        progress: progress.percent,
-        detail: "正在下载更新包",
-      });
-    });
-    updater.on("update-not-available", () => {
-      this.clearDownloadWatch();
-      this.set({ state: "current", detail: "已是最新版本" });
-    });
-    updater.on("update-downloaded", (info) => {
-      this.clearDownloadWatch();
-      this.set({
-        state: "downloaded",
-        version: info.version,
-        progress: 100,
-        detail: "更新已下载，点击安装并重启",
-      });
-      options.notify?.(info.version);
-    });
-    updater.on("update-cancelled", () => {
-      this.clearDownloadWatch();
-      this.set({ state: "error", detail: "更新下载已停止，请检查网络后重试" });
-    });
-    updater.on("error", () => {
-      this.clearDownloadWatch();
-      this.set({
-        state: "error",
-        detail: "更新检查失败，请确认公开仓库和网络连接",
-      });
-    });
+    this.attempt = null;
     this.configure();
   }
-  set(state) {
-    this.client.update = state;
-    this.client.changed();
-  }
-  clearDownloadWatch() {
-    clearTimeout(this.downloadTimer);
-    this.downloadTimer = null;
-    this.downloadToken = null;
-  }
-  watchDownload() {
-    clearTimeout(this.downloadTimer);
-    if (!this.downloadToken) return;
-    this.downloadTimer = setTimeout(() => {
-      const token = this.downloadToken;
-      this.clearDownloadWatch();
-      token.cancel();
-      this.set({
-        state: "error",
-        detail: "更新下载长时间没有进展，请检查 GitHub 下载连接后重试",
-      });
-    }, this.downloadIdleMs);
-    this.downloadTimer.unref?.();
+  set(state) { this.client.update = state; this.client.changed(); }
+  preparedState(prepared, progress = {}) {
+    return { state: "downloaded", version: prepared.manifest.version, progress: 100, ...progress,
+      detail: "新内容已准备好，下次启动自动启用；也可立即重启启用" };
   }
   configure() {
     if (this.localBuild) {
-      this.set({
-        state: "local",
-        detail: "本地安装包，安装新生成的本地包即可升级",
-      });
-      return false;
-    }
-    const repo = this.client.config().releaseRepo;
-    if (!repo) {
-      this.set({
-        state: "unconfigured",
-        detail: "填写公开 GitHub 更新仓库后启用自动更新",
-      });
-      return false;
+      this.set({ state: "local", detail: "本地安装包，安装新生成的本地包即可升级" }); return false;
     }
     if (!this.packaged) {
-      this.set({
-        state: "development",
-        detail: "开发预览不安装更新；打包版本使用同一更新设置",
-      });
-      return false;
+      this.set({ state: "development", detail: "开发预览；正式版本只下载变化的业务内容" }); return false;
     }
-    const [owner, name] = repo.split("/");
-    this.updater.setFeedURL({
-      provider: "github",
-      owner,
-      repo: name,
-      releaseType: "release",
-    });
+    if (!this.client.config().releaseRepo) {
+      this.set({ state: "unconfigured", detail: "填写公开 GitHub 更新仓库后启用自动内容更新" }); return false;
+    }
+    const prepared = this.store.pending();
+    if (prepared) this.set(this.preparedState(prepared));
     return true;
   }
+  cancel() { this.attempt?.abort(); }
   async check() {
-    if (
-      this.busy ||
-      this.client.update.state === "downloaded" ||
-      this.client.update.state === "downloading" ||
-      !this.configure()
-    )
-      return;
+    if (this.busy || !this.configure()) return;
     this.busy = true;
+    const attempt = this.attempt = new AbortController();
+    const repository = this.client.config().releaseRepo;
+    this.set({ state: "checking", detail: "正在检查 GitHub 上的新内容" });
     try {
-      const result = await this.updater.checkForUpdates();
-      if (result?.downloadPromise) {
-        const token = result.cancellationToken;
-        if (this.client.update.state === "downloading") {
-          this.downloadToken = token;
-          this.watchDownload();
-        }
-        const settled = () => {
-          if (this.downloadToken === token) this.clearDownloadWatch();
-        };
-        result.downloadPromise.then(settled, settled);
+      const manifest = await this.store.latest(repository, AbortSignal.any([attempt.signal, AbortSignal.timeout(30000)]));
+      if (repository !== this.client.config().releaseRepo) throw new Error("更新仓库已更改，请重新检查");
+      const pending = this.store.pending();
+      if (pending && compareVersions(manifest.version, pending.manifest.version) <= 0) {
+        this.set(this.preparedState(pending)); return;
       }
-    } catch {
-      this.set({ state: "error", detail: "更新检查失败，请稍后重试" });
+      if (compareVersions(manifest.version, this.client.version) <= 0) {
+        this.set({ state: "current", detail: "已是最新版本；更新只下载变化的业务内容" }); return;
+      }
+      let progress = {};
+      const prepared = await this.store.prepare(manifest, { signal: attempt.signal, onProgress: value => {
+        progress = value;
+        this.set({ state: "downloading", version: manifest.version, ...value, detail: "正在下载变化的内容，未变文件从本地复用" });
+      } });
+      this.set(this.preparedState(prepared, progress));
+      this.notify?.(manifest.version);
+    } catch (error) {
+      this.set({ state: error.code === "BASE_INCOMPATIBLE" ? "incompatible" : "error",
+        detail: error.message || "内容更新失败，请检查 GitHub 网络连接后重试" });
     } finally {
+      if (this.attempt === attempt) this.attempt = null;
       this.busy = false;
     }
   }
   async apply() {
-    if (this.client.update.state !== "downloaded")
-      throw new Error("更新包尚未下载完成");
+    if (this.localBuild || !this.packaged || !this.store.pending()) throw new Error("业务更新尚未准备完成");
     if (this.client.importer.active || this.client.importer.scanning)
-      throw new Error("正在读取设备，请等待本地复制结束再安装更新");
-    const previousPause = !!this.client.config().pauseUploads;
-    this.client.pause(true);
-    this.client.transport.stop();
-    while (this.client.transport.busy)
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    // Resume automatically in the new version, including any partially uploaded file.
-    this.client.db.setSetting("pauseUploads", previousPause);
-    await this.install();
+      throw new Error("正在读取设备，请等待本地复制结束再重启");
+    if (this.client.sendingChats?.size || this.client.snapshot?.().tasks?.some(task => ["queued", "running", "cancelling"].includes(task.state)))
+      throw new Error("对话正在执行，请等待当前回复结束后重启");
+    await this.restart();
   }
 }
 module.exports = { Updates };

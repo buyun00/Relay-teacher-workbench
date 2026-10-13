@@ -101,13 +101,16 @@ py -X utf8 -m workbench.ingress --root "$env:TEMP\fictional-classroom-receiver" 
 1. 从 `package.json` 取得主版本/次版本，用 GitHub workflow 的 `run_number` 作为补丁版本。例如源码 `0.1.0`、运行编号 `42` 生成 `0.1.42`；自动同步本次工作目录的 lockfile，不回写版本提交、不需要手工打标签。重跑同一 run 保持同一版本，编号允许跳号。
 2. Windows runner 执行 Python、队列/传输/发布规则、浏览器和 Electron 开发运行检查，再打 NSIS x64 包；随后用真实打包 EXE 复验复制、拔盘后上传、回执和重启。
 3. 核对 `latest.yml` 与 EXE 的版本、文件大小、SHA-512，生成 `build-info.json` 记录源码 SHA 和资产 SHA-256；构建 artifact 保留 14 天。
-4. 在同仓库创建 `v0.1.42` 草稿 Release，上传 EXE、blockmap、latest.yml 和 build-info.json。GitHub 确认全部资产的长度和 SHA-256 后，才公开为最新版本。失败留在草稿，不被客户端发现。
+4. 创建业务快照清单 classroom-update.json 和按内容寻址的 content-<SHA256>.br 文件，同时为首次安装生成 EXE、blockmap、latest.yml。校验全部内容及源码来源，测试打包 EXE 从业务版本 A 自动更新到 B。
+5. 创建 v0.1.42 草稿 Release，上传业务清单、内容文件、首次安装资产和 build-info.json。GitHub 确认全部资产的长度和 SHA-256 后，才公开为最新版本；失败留在草稿，不被客户端发现。
 
 PR 只构建/测试，不公开更新。手动运行 workflow 默认只构建；在 main 勾选 publish 可发布。发布前后检查 main 提交，过时构建不会发布；较旧版本重跑也不会抢占最新版本。已经公开的同一版本不覆盖安装包，重跑会保留原 Release。并发 main 构建按队列执行，PR 新提交可取消旧检查。
 
 正式 CI 包的默认更新地址是 `buyun00/Relay-teacher-workbench`；`pack:local` 的本地包关闭 GitHub 更新。最初制作的 0.1.0 包没有内置这个地址，需要在“设置 → 更多设置”填一次；之后的 CI 版本自带地址。以后升级主/次版本时修改 package.json 与 lockfile；保持 workflow 文件路径稳定以保留运行编号。Windows 版本各段必须不超过 65535。完整开发、恢复和凭据说明见 [发布流程](../docs/classroom-client-release.md)。
 
-正式安装版启动后检查更新，此后每 6 小时检查；自动下载新包，下载好后发系统提示，并在设置页提供“安装更新并重启”。持续两分钟没有下载进展时取消，提示检查 GitHub 下载连接并允许重试，不影响录音传输。**下载完成、关闭窗口或退出都不会自动安装**。复制/扫描期间禁用安装；安装前暂停并结束本次网络操作，保留队列和用户的暂停偏好，再启动新版本。浏览器、Electron 开发运行和本地安装包不会下载安装更新。
+正式安装版启动后检查更新，此后每 6 小时检查；客户端只读取业务清单，复用本地未变文件，下载变化的 Brotli 内容。它不请求 Setup.exe、blockmap 或 latest.yml，也不启动安装程序。新内容准备好后发系统提示，下次启动自动启用；设置页提供“重启启用新内容”。持续两分钟没有进展会取消并允许重试，已完整校验的新内容在重试时复用。复制、扫描或对话执行期间暂缓立即重启，队列、草稿、副本和连接设置保留在原资料目录。浏览器、开发运行和 Local 包不访问 GitHub 更新。
+
+稳定底座 electron/bootstrap.cjs 和 electron/shell/ 加载完整业务快照；可更新内容包括 React 资源、Electron 主进程业务代码、preload、core 模块和图片。只有界面与队列都启动成功才会确认新版本，启动失败或代码损坏会回退。普通发布保持底座指纹相同；Electron、加载器或原生库变化必须明确发布底座，客户端继续使用原版本并显示不兼容，绝不退回自动安装。旧客户端需要一次升级以进入新机制。详见[发布流程](../docs/classroom-client-release.md)。
 
 本机可复用 Git Credential Manager 已保存的 GitHub 登录完成首次部署；不用把 Token 粘贴到聊天、源码或安装包。当前 EXE 未做 Authenticode 签名。代码签名证书是后续改善 Windows 安装体验的独立配置，不是当前自动打包/更新所需凭据。远端首次运行和公开更新的实测结果记录在 `docs/acceptance.md`。
 
@@ -115,7 +118,9 @@ PR 只构建/测试，不公开更新。手动运行 workflow 默认只构建；
 
 ## 验收边界
 
-`tests/*.test.cjs` 使用临时虚构文件与实际 Python HTTP 接收入口，覆盖改名去重、同名替换、复制中变化、稳定观察、手动多文件导入与自动扫描串行、任务草稿持久化、重启、丢失副本、盘符复用、分段续传、回执丢失/不匹配、凭据错误和更新安装时机。`tests/ui` 验证任务与草稿、上传状态和手动入口、暂停、折叠设置及预览凭据不落盘；`tests/electron-smoke.cjs` 检查真实 Electron 界面协议、沙箱、桥、SQLite 与 Windows 凭据加密，通过设备和手动多选复制、取消选择、重复导入、移除源目录后上传、回执/状态及重启验证。
+`tests/*.test.cjs` 使用临时虚构文件与实际 Python HTTP 接收入口，覆盖改名去重、同名替换、复制中变化、稳定观察、手动多文件导入与自动扫描串行、任务草稿持久化、重启、丢失副本、盘符复用、分段续传、回执丢失/不匹配、凭据错误和内容更新原子切换。`tests/ui` 验证任务与草稿、上传状态和手动入口、暂停、折叠设置及预览凭据不落盘；`tests/electron-smoke.cjs` 检查真实 Electron 界面协议、沙箱、桥、SQLite 与 Windows 凭据加密，通过设备和手动多选复制、取消选择、重复导入、移除源目录后上传、回执/状态及重启验证。
+
+正式包还须运行 node tests/content-update-smoke.cjs，使用临时虚构队列和草稿，核对真实 EXE 从 GitHub 格式的模拟 Release 只下载变化内容，普通退出后加载新版主进程业务、preload 和界面，EXE 本身不变，资料仍可读取。
 
 检查本地包的实际 EXE 时设置 `CLASSROOM_PACKAGED_EXE` 指向 `release-local/win-unpacked/Hermes Classroom.exe`，正式包则指向 `release/win-unpacked/Hermes Classroom.exe`，再运行同一脚本。脚本通过显式独立 user-data-dir 使用临时虚构数据，不触碰默认教师资料或系统登录启动设置。
 

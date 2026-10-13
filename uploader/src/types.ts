@@ -106,6 +106,10 @@ export interface Snapshot {
     detail: string;
     version?: string;
     progress?: number;
+    downloadedBytes?: number;
+    downloadTotal?: number;
+    updatedFiles?: number;
+    reusedFiles?: number;
   };
   logs: { id: number; at: string; level: string; message: string }[];
 }
@@ -126,6 +130,7 @@ export interface LocalTask {
   title_source?: "fallback" | "ai";
 }
 export interface ClientAPI {
+  runtimeReady(): Promise<unknown>;
   snapshot(): Promise<Snapshot>;
   subscribe(callback: (snapshot: Snapshot) => void): () => void;
   saveSettings(
@@ -170,6 +175,7 @@ export interface ChatTurn {
   state: "queued" | "running" | "cancelling" | "completed" | "cancelled" | "failed" | "interrupted";
   model_id?: string | null; error: string | null; created_at: string;
   attachments?: ChatAttachment[];
+  outputs?: ChatAttachment[];
 }
 export interface ChatEvent {
   seq: number; chat_id: string; turn_id: string | null; kind: string; at: string;

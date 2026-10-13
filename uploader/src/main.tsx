@@ -6,8 +6,12 @@ import "./chat.css";
 import "./theme.css";
 import "katex/dist/katex.min.css";
 
+function ReadyApp() {
+  React.useEffect(() => { void window.classroom?.runtimeReady(); }, []);
+  return <App />;
+}
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ReadyApp />
   </React.StrictMode>,
 );

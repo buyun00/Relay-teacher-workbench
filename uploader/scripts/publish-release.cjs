@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { MANIFEST_NAME, validateManifest } = require("../electron/shell/manifest.cjs");
 
 async function sha256(file) {
   const hash = crypto.createHash("sha256");
@@ -52,7 +53,12 @@ function github(token) {
 }
 
 async function publish(root, options) {
-  const { repository, sourceSha, api, notes = "", log = console.log } = options;
+  const { repository, sourceSha, api, notes = "", log = console.log,
+    readAsset = async asset => {
+      const response = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error("Cannot read previous desktop base contract");
+      return response.json();
+    } } = options;
   const info = JSON.parse(
     await fsp.readFile(path.join(root, "build-info.json"), "utf8"),
   );
@@ -67,7 +73,10 @@ async function publish(root, options) {
       "Build provenance does not match this source repository and commit",
     );
   const installer = `Hermes-Classroom-${info.version}-x64-Setup.exe`;
-  const names = [installer, `${installer}.blockmap`, "latest.yml"];
+  const manifest = validateManifest(JSON.parse(await fsp.readFile(path.join(root, MANIFEST_NAME), "utf8")), info.shell, repository);
+  if (manifest.version !== info.version || manifest.source_sha !== sourceSha) throw new Error("Business update does not match the source commit");
+  const content = [...new Set(manifest.files.map(file => "content/" + file.asset))];
+  const names = [installer, `${installer}.blockmap`, "latest.yml", MANIFEST_NAME, ...content];
   if (
     info.assets?.length !== names.length ||
     names.some(
@@ -75,7 +84,7 @@ async function publish(root, options) {
     )
   )
     throw new Error(
-      "The complete installer, blockmap and update manifest are required",
+      "The complete installer, business manifest and every content file are required",
     );
   const assets = [...info.assets];
   for (const asset of assets) {
@@ -115,9 +124,9 @@ async function publish(root, options) {
         (asset) =>
           !release.assets.some(
             (remote) =>
-              remote.name === asset.name &&
+              remote.name === path.basename(asset.name) &&
               remote.state === "uploaded" &&
-              remote.size > 0,
+              remote.size === asset.size && remote.digest === `sha256:${asset.sha256}`,
           ),
       )
     )
@@ -128,6 +137,12 @@ async function publish(root, options) {
     return { state: "existing", url: release.html_url };
   }
   const latest = await api(`${base}/releases/latest`);
+  const previousManifest = latest?.assets?.find(asset => asset.name === MANIFEST_NAME);
+  if (previousManifest) {
+    const previous = validateManifest(await readAsset(previousManifest), undefined, repository);
+    if (previous.shell.key !== manifest.shell.key && !options.allowShellChange)
+      throw new Error("Desktop base changed. Ordinary releases must preserve the content-update base; use an explicit base release for a manual base upgrade.");
+  }
   const lastVersion = /^v(\d+)\.(\d+)\.(\d+)$/.exec(latest?.tag_name || "");
   if (lastVersion) {
     const previous = lastVersion.slice(1).map(Number);
@@ -145,7 +160,7 @@ async function publish(root, options) {
       tag_name: tag,
       target_commitish: sourceSha,
       name: `课堂连接 ${info.version}`,
-      body: `${marker}\n\n${notes.replace(/^# .*\r?\n/, "")}\n\n源码提交：[${sourceSha.slice(0, 8)}](https://github.com/${repository}/commit/${sourceSha})\n\nCI 自动构建；安装包、更新清单和来源信息已核对。`,
+      body: `${marker}\n\n${notes.replace(/^# .*\r?\n/, "")}\n\n源码提交：[${sourceSha.slice(0, 8)}](https://github.com/${repository}/commit/${sourceSha})\n\n已有新版客户端自动下载变化的业务内容，下次启动启用，无需重新安装。Setup.exe 供首次安装及旧客户端的一次性迁移使用。CI 已核对业务清单、内容文件、安装包和来源信息。`,
       draft: true,
       prerelease: false,
       generate_release_notes: true,
@@ -156,12 +171,12 @@ async function publish(root, options) {
   )
     throw new Error("GitHub did not return a valid draft release");
   for (const old of release.assets || []) {
-    if (!assets.some((asset) => asset.name === old.name))
+    if (!assets.some((asset) => path.basename(asset.name) === old.name))
       throw new Error("Draft contains unrelated release assets");
     await api(`${base}/releases/assets/${old.id}`, "DELETE");
   }
   for (const asset of assets) {
-    const url = `${release.upload_url.split("{")[0]}?name=${encodeURIComponent(asset.name)}`;
+    const url = `${release.upload_url.split("{")[0]}?name=${encodeURIComponent(path.basename(asset.name))}`;
     const remote = await api(url, "POST", {
       file: path.join(root, asset.name),
       size: asset.size,
@@ -196,6 +211,7 @@ if (require.main === module) {
     sourceSha: process.env.GITHUB_SHA,
     api: github(process.env.GH_TOKEN),
     notes: fs.readFileSync(path.resolve(__dirname, "../CHANGELOG.md"), "utf8"),
+    allowShellChange: process.env.ALLOW_SHELL_CHANGE === "true",
   }).catch((error) => {
     console.error(error.message);
     process.exitCode = 1;

@@ -25,6 +25,10 @@ on:
         description: "Publish an update from main after all checks pass"
         type: boolean
         default: false
+      base_release:
+        description: "Explicitly allow a changed Electron/loader base (requires a one-time manual base upgrade)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -72,6 +76,10 @@ jobs:
         env:
           CLASSROOM_PACKAGED_EXE: ${{ github.workspace }}/uploader/release/win-unpacked/Hermes Classroom.exe
         run: node tests/electron-smoke.cjs
+      - name: Content-only update and restart acceptance
+        env:
+          CLASSROOM_PACKAGED_EXE: ${{ github.workspace }}/uploader/release/win-unpacked/Hermes Classroom.exe
+        run: node tests/content-update-smoke.cjs
       - name: Verify installer and write source provenance
         run: node scripts/verify-release.cjs
       - uses: actions/upload-artifact@v4
@@ -84,6 +92,8 @@ jobs:
             uploader/release/*.blockmap
             uploader/release/latest.yml
             uploader/release/build-info.json
+            uploader/release/classroom-update.json
+            uploader/release/content/*.br
 
   publish:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
@@ -102,7 +112,8 @@ jobs:
         with:
           name: classroom-client-windows
           path: installer
-      - name: Publish installer to public Releases
+      - name: Publish business content and first-install assets to public Releases
         env:
           GH_TOKEN: ${{ github.token }}
+          ALLOW_SHELL_CHANGE: ${{ github.event_name == 'workflow_dispatch' && inputs.base_release }}
         run: node uploader/scripts/publish-release.cjs installer

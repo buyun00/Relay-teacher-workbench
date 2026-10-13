@@ -8,6 +8,8 @@ const yaml = require("js-yaml");
 const { ciVersion, prepare } = require("../scripts/prepare-ci.cjs");
 const { verifyRelease } = require("../scripts/verify-release.cjs");
 const { publish } = require("../scripts/publish-release.cjs");
+const { contentFixture } = require("./fixtures/content.cjs");
+const { buildContent } = require("../scripts/build-content.cjs");
 const repository = "fictional-owner/fictional-client";
 const sourceSha = "a".repeat(40);
 
@@ -33,6 +35,8 @@ async function fixture(t) {
       files: [{ url: installer, size: content.length, sha512 }],
     }),
   );
+  const businessFixture = await contentFixture(t);
+  await buildContent(businessFixture.nextSource, root, { version: "0.1.42", repository, sourceSha });
   await verifyRelease(root, "0.1.42", {
     source_repository: repository,
     source_sha: sourceSha,
@@ -87,7 +91,7 @@ function fakeApi(options = {}) {
         calls.filter((call) =>
           call.endpoint.startsWith("https://uploads.github.com/"),
         ).length,
-        4,
+        13,
       );
       assert.deepEqual(body, { draft: false, make_latest: "true" });
       return { ...release, draft: false };
@@ -142,7 +146,7 @@ test("only a matching manifest and unchanged build artifacts can be published", 
   assert.equal(calls.length, 0);
 });
 
-test("release stays a draft until GitHub confirms all four uploaded asset digests", async (t) => {
+test("release stays a draft until GitHub confirms all installer and business content digests", async (t) => {
   const root = await fixture(t);
   const { api, calls } = fakeApi();
   const result = await publish(root, { repository, sourceSha, api, log() {} });
@@ -185,8 +189,9 @@ test("rerunning a published version preserves its original installer and source 
   const info = JSON.parse(
     await fs.readFile(path.join(root, "build-info.json"), "utf8"),
   );
-  const assets = [...info.assets, { name: "build-info.json", size: 10 }].map(
-    (asset) => ({ ...asset, state: "uploaded" }),
+  const infoBytes = await fs.readFile(path.join(root, "build-info.json"));
+  const assets = [...info.assets, { name: "build-info.json", size: infoBytes.length, sha256: crypto.createHash("sha256").update(infoBytes).digest("hex") }].map(
+    (asset) => ({ ...asset, name: path.basename(asset.name), state: "uploaded", digest: "sha256:" + asset.sha256 }),
   );
   const existing = fakeApi({ release: { draft: false, assets } });
   const result = await publish(root, {

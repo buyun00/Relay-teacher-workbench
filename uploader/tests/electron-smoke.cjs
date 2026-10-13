@@ -154,7 +154,7 @@ async function startReceiver(root) {
       const local = requireApp("../package.json").classroomBuild?.channel === "local";
       if (local) {
         globalThis.localUpdateChecks = 0;
-        requireApp("electron-updater").autoUpdater.checkForUpdates = async () => {
+        globalThis.classroomRuntime.store.fetch = async () => {
           globalThis.localUpdateChecks++;
           throw new Error("A local installer must not request a GitHub update");
         };

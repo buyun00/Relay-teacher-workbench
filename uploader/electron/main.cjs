@@ -18,7 +18,7 @@ const fs = require("node:fs/promises");
 const { pathToFileURL } = require("node:url");
 const { ClassroomClient } = require("./core/client.cjs");
 const { Updates } = require("./core/updater.cjs");
-const { autoUpdater } = require("electron-updater");
+const runtime = globalThis.classroomRuntime;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -35,23 +35,11 @@ let window, tray, client, updates;
 let quitting = false,
   closing = false;
 const devURL = !app.isPackaged ? process.env.CLASSROOM_DEV_URL : null;
-const buildChannel = require("../package.json").classroomBuild?.channel || "release";
-// Explicit profiles allow isolated acceptance without touching the teacher's default data.
-const profileDirectory = app.commandLine.getSwitchValue("user-data-dir");
-if (profileDirectory) app.setPath("userData", path.resolve(profileDirectory));
-if (!app.isPackaged && process.env.CLASSROOM_TEST_DATA)
-  app.setPath("userData", process.env.CLASSROOM_TEST_DATA);
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on("second-instance", () => show());
-  app
-    .whenReady()
-    .then(start)
-    .catch((error) => {
-      dialog.showErrorBox("课堂连接无法启动", error.message);
-      app.exit(1);
-    });
-}
+const buildChannel = runtime.channel;
+let applicationReady = false, rendererReady = false;
+const confirmRuntime = () => { if (applicationReady && rendererReady) runtime.ready(); };
+app.on("second-instance", () => show());
+app.whenReady().then(start).catch((error) => runtime.fail(error));
 
 const show = () => {
   if (window) {
@@ -85,6 +73,9 @@ function createWindow() {
     },
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("render-process-gone", (_event, detail) => {
+    if (!rendererReady) runtime.fail(new Error("更新界面启动失败：" + detail.reason));
+  });
   window.webContents.on("will-navigate", (event, url) => {
     if (
       devURL
@@ -120,6 +111,7 @@ function handlers() {
       return fn(input);
     });
   handle("snapshot", () => client.snapshot());
+  handle("runtime-ready", () => { rendererReady = true; confirmRuntime(); });
   handle("create-task", () => client.createTask());
   handle("task-draft", (input) => client.saveTaskDraft(input));
   handle("task-archive", (input) => client.archiveTask(input));
@@ -231,7 +223,7 @@ async function start() {
     return net.fetch(pathToFileURL(target).toString());
   });
   client = new ClassroomClient(app.getPath("userData"), {
-    version: app.getVersion(),
+    version: runtime.version,
     codec: {
       encrypt(value) {
         if (!safeStorage.isEncryptionAvailable())
@@ -246,21 +238,23 @@ async function start() {
   const release = require("./release-config.json").repository;
   if (release && !client.config().releaseRepo)
     client.db.setSetting("releaseRepo", release);
-  updates = new Updates(autoUpdater, client, {
+  updates = new Updates(runtime.store, client, {
     packaged: app.isPackaged,
     channel: buildChannel,
     notify(version) {
       if (Notification.isSupported())
         new Notification({
           title: "课堂连接有更新",
-          body: `${version} 已下载，打开客户端即可安装。`,
+          body: `${version} 的新内容已下载，下次启动自动启用。`,
         }).show();
     },
-    install: async () => {
+    restart: async () => {
       quitting = true;
       closing = true;
+      updates.cancel();
       await client.close();
-      autoUpdater.quitAndInstall(false, true);
+      app.relaunch();
+      app.quit();
     },
   });
   createWindow();
@@ -296,6 +290,8 @@ async function start() {
   );
   tray.on("double-click", show);
   await client.start();
+  applicationReady = true;
+  confirmRuntime();
   if (app.isPackaged && buildChannel !== "local") {
     setTimeout(() => void updates.check(), 10000);
     setInterval(() => void updates.check(), 6 * 60 * 60 * 1000).unref();
@@ -303,6 +299,7 @@ async function start() {
 }
 app.on("before-quit", (event) => {
   quitting = true;
+  updates?.cancel();
   if (client && !closing) {
     event.preventDefault();
     closing = true;

@@ -18,5 +18,18 @@ export default defineConfig(({ command }) => ({
   ],
   base: "./",
   server: { port: 5178, strictPort: true },
-  build: { target: "es2022" },
+  build: {
+    target: "es2022",
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /node_modules\/(react|react-dom|scheduler)\//, priority: 30 },
+            { name: "vendor-katex", test: /node_modules\/(katex|rehype-katex|remark-math)\//, priority: 20 },
+            { name: "vendor-markdown", test: /node_modules\//, priority: 10 },
+          ],
+        },
+      },
+    },
+  },
 }));

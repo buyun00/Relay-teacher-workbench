@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("classroom", {
+  runtimeReady: () => ipcRenderer.invoke("client:runtime-ready"),
   snapshot: () => ipcRenderer.invoke("client:snapshot"),
   saveSettings: (input) => ipcRenderer.invoke("client:settings", input),
   selectFolder: () => ipcRenderer.invoke("client:select-folder"),
