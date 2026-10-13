@@ -15,7 +15,7 @@ function applyEvent(view, event) {
   if (kind === "turn" && !turn) {
     turn = { ...p, chat_id: view.chat.id, error: null };
     view.turns.push(turn);
-    if (view.turns.length === 1) view.chat.title = p.content.trim().split(/\r?\n/)[0].slice(0, 36);
+    if (view.turns.length === 1) view.chat.title = (p.content.trim().split(/\r?\n/)[0] || p.attachments?.[0]?.filename || "新任务").slice(0, 36);
   }
   if (kind === "delta" && turn) turn.answer += p.text;
   if (["state", "done", "model"].includes(kind) && turn) Object.assign(turn, p);
@@ -49,23 +49,36 @@ class ChatTransport {
   }
   scope() { const c = this.getConfig(); return c.endpoint + "|" + c.workspaceId; }
   tasks() { return this.db.setting("chatTasks:" + this.scope(), []); }
-  async request(route, body) {
-    const c = this.getConfig();
+  context() { return { ...this.getConfig(), scope: this.scope(), token: this.getToken() }; }
+  assertScope(context) { if (context.scope !== this.scope()) throw new Error("连接空间已改变，请重新打开对话"); }
+  async fetchResponse(route, options, c = this.context()) {
     if (!c.endpoint) throw new Error("请在设置中填写连接地址后开始对话");
-    const token = this.getToken();
     const response = await this.fetcher(c.endpoint + route, {
-      method: body === undefined ? "GET" : "POST", redirect: "error",
-      signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(15000)]),
-      headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      ...(body === undefined ? {} : { body: JSON.stringify({ ...body, workspace_id: c.workspaceId }) }),
+      ...options, redirect: "error", signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(60000)]),
+      headers: { ...options.headers, ...(c.token ? { Authorization: "Bearer " + c.token } : {}) },
     });
-    const value = await response.json();
     if (!response.ok) {
+      const value = await response.json();
       const error = new Error(response.status === 401 ? "连接凭据无效，请检查设置" : value.error || "对话服务连接失败");
       error.status = response.status;
       throw error;
     }
+    return response;
+  }
+  async request(route, body, c = this.context()) {
+    const response = await this.fetchResponse(route, {
+      method: body === undefined ? "GET" : "POST",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify({ ...body, workspace_id: c.workspaceId }) }),
+    }, c);
+    const value = await response.json();
     if (value.workspace_id && value.workspace_id !== c.workspaceId) throw new Error("对话服务与教师空间不匹配");
+    return value;
+  }
+  async binary(route, method, body, c) {
+    const response = await this.fetchResponse(route, { method, body, headers: { "Content-Type": "application/octet-stream" } }, c);
+    const value = await response.json();
+    if (value.workspace_id !== c.workspaceId) throw new Error("附件与教师空间不匹配");
     return value;
   }
   sync() {
@@ -165,20 +178,27 @@ class ChatTransport {
       }
     }
   }
-  async send({ id, content }) {
-    const key = "chatPending:" + this.scope() + ":" + id;
+  async send({ id, content, attachments = [] }, upload = async () => {}) {
+    const context = this.context();
+    const key = "chatPending:" + context.scope + ":" + id;
     let pending = this.db.setting(key);
-    if (pending && pending.content !== content) {
-      const view = await this.request("/v1/chats/" + id);
-      if (!view.turns.some((t) => t.id === pending.id)) throw new Error("上一条消息的发送状态待确认，请先重试原消息");
+    if (pending && (pending.content !== content || JSON.stringify(pending.attachments || []) !== JSON.stringify(attachments))) {
+      if (pending.phase !== "uploading") {
+        const view = await this.request("/v1/chats/" + id, undefined, context);
+        if (!view.turns.some((t) => t.id === pending.id)) throw new Error("上一条消息的发送状态待确认，请先重试原消息");
+      }
       this.db.setSetting(key, null);
       pending = null;
     }
-    pending ||= { id: crypto.randomUUID(), content };
+    pending ||= { id: crypto.randomUUID(), content, attachments, phase: "uploading" };
     this.db.setSetting(key, pending);
-    await this.request("/v1/chats", { id });
+    await this.request("/v1/chats", { id }, context);
     try {
-      const turn = await this.request("/v1/chats/" + id + "/turns", pending);
+      this.assertScope(context);
+      await upload(id, attachments, context);
+      this.assertScope(context);
+      pending.phase = "accepting"; this.db.setSetting(key, pending);
+      const turn = await this.request("/v1/chats/" + id + "/turns", pending, context);
       this.db.setSetting(key, null);
       return turn;
     } catch (error) {

@@ -34,6 +34,10 @@ DS 在预分类确认需求时一并生成语义标题。手动选定模型或�
 - `GET/POST /v1/chats`：持久化会话列表/幂等建立映射。
 - `GET /v1/chats/<id>`：一致性历史快照和事件游标。
 - `POST /v1/chats/<id>/turns`：以客户端生成的固定消息 ID 入队。
+- `POST /v1/chats/<id>/attachments`：以固定附件 ID、文件名、MIME、字节数和本次传输摘要开启或恢复文件传输。
+- `GET/PUT /v1/chats/<id>/attachments/<attachment_id>?offset=<bytes>`：读取持久化进度或上传分块。
+- `POST /v1/chats/<id>/attachments/<attachment_id>/complete`：校验本次传输字节并保存原件，返回持久化接收回执。
+- `GET /v1/chats/<id>/attachments/<attachment_id>/content`：使用既有连接凭据下载历史附件。
 - `POST /v1/chats/<id>/model`：空闲时明确切换模型或恢复自动。
 - `POST /v1/chats/<id>/archive`：以 `{"archived": true/false}` 幂等归档或恢复，返回保留原历史的快照。
 - `POST /v1/chats/<id>/cancel`：停止当前轮次。
@@ -41,6 +45,20 @@ DS 在预分类确认需求时一并生成语义标题。手动选定模型或�
 
 现有 `--auto-process` 接收端启动对话 worker；只部署插件代码并重启它自己，保留 ASR、Hermes 宿主与其他服务。GitHub Actions 仍测试、构建和发布官方更新；每次桌面交付另用 `npm run pack:local` 生成关闭 GitHub 更新的本机安装包。
 
+## 消息附件
+
+消息框的回形针打开系统多文件选择器，支持任意扩展名；可将文件拖入对话，也可直接粘贴剪贴板图片。发送前展示文件名、大小、图片预览和移除入口，发送时显示附件上传进度。文字和多个文件可以一起发送，也允许只发附件。历史消息保留附件卡片，图片支持放大预览，文件可另存到本机。
+
+Electron 主进程流式复制文件到用户数据目录的 `chat-attachments/`，初次复制计算传输摘要；草稿附件身份和所属会话保存在独立的 `chat_files` 表。原文件被移走或客户端重启后，仍可使用已保存副本发送。浏览器拖入的磁盘文件经 preload 的原生 `webUtils.getPathForFile` 取路径，粘贴图片通过字节传入主进程；渲染器不接触连接令牌或任意文件路径。
+
+服务端独立的 `desktop_chat_attachments` 保存分块进度和回执，原件在同一 Store 的 `originals/chat-attachments/` 内，随既有业务备份一起保存。它们不注册为录音、不启动 ASR；课堂录音仍通过原来的录音上传入口处理。只在首次接收新传输字节时校验摘要，已保存原件和回执重试不重新计算文件哈希。
+
+一条消息的文字、附件 ID 及顺序一起构成幂等身份，服务端事务拒绝未传完、来自其他会话或被替换的附件。客户端在请求前持久化消息 ID，上传中断按服务端 offset 续传，消息回执丢失后重试同一条消息。仅成功确认的那批草稿附件会从待发送区移除，网络等待期间的新草稿和新附件保留。
+
+每轮把原件路径与文件信息交给同一个原生 Hermes 会话。图片使用宿主的 `decide_image_input_mode` / `build_native_content_parts`：支持视觉的当前模型收到原生图片输入，文字模型使用原生 `vision_analyze_tool` 先读取图片，过程显示为真实步骤。PDF、Office、文本、音视频及其他格式由已有原生文件或相应工具按需求处理；附带文件不代表每种格式都已自动解析。DS 分类和标题生成同时收到附件文件信息。
+
+模型选择是自定义玻璃弹出菜单，支持鼠标、方向键、Home/End、Enter、Escape 和失焦关闭；回复期间保持禁用。正文与辅助文字提高对比度，轻微阴影只用于品牌和标题。
+
 ## 验证层
 
-`tests/test_chats.py` 使用虚构数据验证身份/幂等、互斥、模型固定、停止、恢复、归档、标题、旧库兼容与游标一致性。`uploader/tests/chat.test.cjs` 验证增量重放去重、归档后重启恢复及响应丢失后的同 ID 重试；浏览器用虚构回复验证发送、步骤、分类、停止、归档、居中及原上传页面。真实模型、原生教师工具、Electron/安装包连接与恢复另做运行验收，不能以预览或模拟测试代替。
+`tests/test_chats.py` 使用虚构数据验证身份/幂等、互斥、模型固定、停止、恢复、归档、标题、旧库兼容与游标一致性。`tests/test_chat_attachments.py` 检查分块恢复、空文件、消息附件顺序与身份、跨会话拒绝、原件备份和实际 HTTP 上传/下载。`uploader/tests/chat-files.test.cjs` 检查本机草稿与副本重启恢复、上传和消息回执丢失后的同 ID 重试、新草稿保留。浏览器使用虚构回复检查多文件选择、拖入、粘贴、图片预览、只发送附件和玻璃模型菜单；Electron 与打包 EXE 使用隔离资料目录执行真实 preload IPC、粘贴图片字节、原文件移除后上传及历史附件重新下载。真实模型的图片识别和文件读取另做原生运行验收，不能以预览或模拟测试代替。

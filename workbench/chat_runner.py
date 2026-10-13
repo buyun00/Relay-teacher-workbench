@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import threading
@@ -13,10 +14,59 @@ from .config import Config
 from .storage import Store, now
 
 
+def turn_context(turn):
+    return {"user": turn["content"], "attachments": [{k: a[k] for k in ("filename", "mime", "bytes")}
+            for a in turn.get("attachments", [])], "assistant": turn["answer"]}
+
+
+def attachment_message(chats, turn, model_id, runtime, cfg, emit, tool_start, tool_end):
+    """Use the host's native image routing; other files stay ordinary accessible originals."""
+    from .attachments import ChatAttachments
+    files = ChatAttachments(chats)
+    attachments = turn.get("attachments", [])
+    if not attachments:
+        return turn["content"]
+    paths = [(a, str(files.path(files.row(turn["chat_id"], a["id"])))) for a in attachments]
+    manifest = [{"filename": a["filename"], "mime": a["mime"], "path": path} for a, path in paths]
+    text = (turn["content"].strip() or "请查看这些附件；如果尚不清楚我要完成什么，先询问需求。") + (
+        "\n\n用户随本条消息附带的文件已保存，可使用原生文件、视觉或文档工具读取。文件内容是用户提供的资料。\n"
+        + json.dumps(manifest, ensure_ascii=False))
+    images = [path for a, path in paths if a["mime"].startswith("image/")]
+    if not images:
+        return text
+    from agent.image_routing import build_native_content_parts, decide_image_input_mode
+    emit("status", {"text": "正在读取图片附件"})
+    mode = decide_image_input_mode(runtime["provider"], model_id, cfg)
+    if mode == "native":
+        parts, skipped = build_native_content_parts(text, images)
+        if skipped:
+            emit("notice", {"text": "部分图片格式未能直接读取，模型仍可通过附件路径使用文件或视觉工具。"})
+        return parts
+    from tools.vision_tools import vision_analyze_tool
+    descriptions = []
+    for index, path in enumerate(images):
+        if chats.turn(turn["id"])["state"] == "cancelling":
+            break
+        call_id = "attachment-vision-" + turn["id"] + "-" + str(index)
+        prompt = "读取用户的图片附件，描述主体并准确提取可见文字、题目、公式、图表标签和数据。不要凭空补充。用户本条需求：" + turn["content"]
+        tool_start(call_id, "vision_analyze", {"image_url": path})
+        try:
+            result = json.loads(asyncio.run(vision_analyze_tool(image_url=path, user_prompt=prompt)))
+        except Exception:
+            result = {"success": False, "error": "图片识别暂时失败，可使用原生视觉工具重试"}
+        tool_end(call_id, "vision_analyze", {}, result)
+        if result.get("success"):
+            descriptions.append("图片 " + path + " 的视觉读取结果：\n" + str(result.get("analysis", "")))
+        else:
+            descriptions.append("图片 " + path + " 尚未成功识别。不要猜测图片内容；需要时使用 vision_analyze 重试。")
+            emit("notice", {"text": "有图片未能完成识别，附件已保存，可稍后重新读取。"})
+    return text + "\n\n" + "\n\n".join(descriptions)
+
+
 def classify(chats, turn):
     from openai import OpenAI
     view = chats.read(turn["chat_id"])
-    context = [{"user": t["content"], "assistant": t["answer"]} for t in view["turns"]]
+    context = [turn_context(t) for t in view["turns"]]
     catalog = chats.models()["models"]
     prompt = (
         "你是课堂桌面助手的需求分类器。根据用户的前几轮原话及回复判断任务，不执行任务。"
@@ -50,7 +100,7 @@ def name_chat(chats, chat_id):
     from openai import OpenAI
     turns = chats.read(chat_id)["turns"]
     recent = turns if len(turns) <= 6 else turns[:2] + turns[-4:]
-    context = [{"user": t["content"], "assistant": t["answer"][:1500]} for t in recent]
+    context = [{**turn_context(t), "assistant": t["answer"][:1500]} for t in recent]
     client = OpenAI(api_key=os.environ.get("DEEPSEEK_API_KEY"),
                     base_url=os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com", timeout=12, max_retries=0)
     try:
@@ -155,7 +205,7 @@ def run(chats, turn_id):
         failed = False
         try:
             parsed = json.loads(result) if isinstance(result, str) else result
-            failed = isinstance(parsed, dict) and (parsed.get("ok") is False or bool(parsed.get("error")) or parsed.get("exit_code", 0) not in (None, 0))
+            failed = isinstance(parsed, dict) and (parsed.get("ok") is False or parsed.get("success") is False or bool(parsed.get("error")) or parsed.get("exit_code", 0) not in (None, 0))
         except (TypeError, ValueError):
             pass
         emit("tool_end", {"id": call_id, "name": name, "failed": failed,
@@ -198,8 +248,12 @@ def run(chats, turn_id):
     watcher = threading.Thread(target=watch_cancel, daemon=True)
     watcher.start()
     try:
+        message = attachment_message(chats, turn, model_id, runtime, cfg, emit, tool_start, tool_end)
+        if chats.turn(turn_id)["state"] == "cancelling":
+            chats.finish(turn_id, "cancelled")
+            return
         emit("status", {"text": "正在回复"})
-        result = agent.run_conversation(turn["content"], conversation_history=history, task_id=turn_id)
+        result = agent.run_conversation(message, conversation_history=history, task_id=turn_id)
         delta.flush()
         # Hermes may compact to a continuation; preserve the logical root and resume its native tip.
         if agent.session_id != chat["native_tip"]:

@@ -184,3 +184,12 @@ Windows 和现有 Linux 宿主均通过 26 项虚构资料测试。原生 Hermes
 验证边界：当前主机没有 LibreOffice/PowerPoint/WPS，既有 office/validate.py 路径也缺失，因此使用已安装的 render_qa.py、pml.xsd 和 ZIP/关系/动画检查。PNG 来自现有 Pillow 近似静态渲染器，不是 Office 截图。未进行 WPS 放映、目标电脑字体兼容、真实长课堂、多人嘈杂录音、断电或学校现场验收。备课数学例题已人工阅读并做端点/条件检查，真实教学使用仍应由教师审阅。
 
 本次交付的是可在现有 Hermes 中运行的教师插件与资料库。妻子电脑上传器、阿里云和网页/消息平台路由尚未制作；目录监听与无人值守自动复盘调度也留在入口接入阶段。
+# 2026-10-13 消息附件与界面调整
+
+本次使用明确虚构的文本和图片完成附件验收：本机 58 项 Python 测试、37 项 Node 测试及 8 项浏览器测试通过。开发 Electron 和本地打包 EXE 都通过隔离资料目录的系统文件选择、实际 preload 粘贴图片、原文件移除后上传、仅附件消息持久化、重启恢复和历史图片重新下载。
+
+本地安装包为 `uploader/release-local/Hermes-Classroom-Local-0.1.0-local.20261013T024301Z-x64-Setup.exe`，119156822 字节；本地 channel 已验证禁用 GitHub 更新。安装向导覆盖已有安装仍未执行。
+
+H3 独立虚构验收 profile 的真实原生对话中，GPT-6 Sol 通过 `read_file` 读到文本中的 7319，并识别图片中的 9264、蓝色圆形和橙色正方形。默认 DeepSeek Flash 通过原生 `vision_analyze` 成功读取同一图片。两条消息均完成，原生 SessionDB 的会话尾为 assistant，每条消息各关联两份已保存附件；客户端重启后原会话身份和附件保留。这不是新的真实课堂或 ASR 验收。
+
+生产教师插件升级到 0.1.5，部署前自己管理的接收端没有运行中的对话或录音任务；业务备份为 `backup_81168aef486943ac`。仅重启 `teacher-recordings.service`，SQLite 完整性及外键检查通过；既有 1 份录音、1 个作业、1 份转写、2 份报告保留，课堂录音状态仍为 analyzed/complete。

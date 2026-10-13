@@ -11,11 +11,12 @@ import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PureWindowsPath
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, quote
 
 from .artifacts import Artifacts
 from .config import Config, WorkbenchError
 from .chats import Chats, ChatWorker
+from .attachments import ChatAttachments
 from .storage import Store, atomic_write, encode, now
 from .recordings import Recordings, RecordingWorker
 
@@ -246,6 +247,7 @@ class IngressServer(ThreadingHTTPServer):
     def __init__(self, address, ingress: DesktopIngress, token: str = ""):
         self.ingress, self.token = ingress, token
         self.chats = Chats(ingress.store)
+        self.attachments = ChatAttachments(self.chats)
         self.stream_stop = threading.Event()
         super().__init__(address, Handler)
 
@@ -330,6 +332,36 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.server.chats.models()
             elif parsed.path == "/v1/chats" and self.command in {"GET", "POST"}:
                 result = self.server.chats.list() if self.command == "GET" else self.server.chats.create(self.chat_payload())
+            elif match := re.fullmatch(r"/v1/chats/([A-Za-z0-9_-]+)/attachments(?:/([A-Za-z0-9_-]+)(?:/(complete|content))?)?", parsed.path):
+                chat_id, attachment_id, action = match.groups()
+                files = self.server.attachments
+                if self.command == "POST" and not attachment_id:
+                    result = files.open(chat_id, self.chat_payload())
+                elif self.command == "POST" and action == "complete":
+                    self.chat_payload()
+                    result = files.complete(chat_id, attachment_id)
+                elif self.command == "PUT" and attachment_id and not action:
+                    try:
+                        offset = int(parse_qs(parsed.query).get("offset", [""])[0])
+                    except ValueError as exc:
+                        raise ProtocolError("Invalid offset") from exc
+                    result = files.write(chat_id, attachment_id, offset, self.rfile, self.length())
+                elif self.command == "GET" and attachment_id and not action:
+                    result = files.view(files.row(chat_id, attachment_id))
+                elif self.command == "GET" and action == "content":
+                    row, target = files.content(chat_id, attachment_id)
+                    with target.open("rb") as stream:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/octet-stream")
+                        self.send_header("Content-Length", str(row["byte_length"]))
+                        self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(row["filename"]))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        while chunk := stream.read(1024 * 1024):
+                            self.wfile.write(chunk)
+                    return
+                else:
+                    raise ProtocolError("Not found", 404)
             elif match := re.fullmatch(r"/v1/chats/([A-Za-z0-9_-]+)(?:/(turns|model|cancel|events|archive))?", parsed.path):
                 chat_id, action = match.groups()
                 chats = self.server.chats

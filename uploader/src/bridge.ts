@@ -1,4 +1,4 @@
-import type { ChatView, ClientAPI, Recording, Snapshot } from "./types";
+import type { ChatAttachment, ChatView, ClientAPI, Recording, Snapshot } from "./types";
 
 function browserPreview(): ClientAPI {
   const date = "2026-10-12";
@@ -125,6 +125,7 @@ function browserPreview(): ClientAPI {
   const listeners = new Set<(snapshot: Snapshot) => void>();
   const chatListeners = new Set<(view: ChatView) => void>();
   const chats = new Map<string, ChatView>();
+  const attachments = new Map<string, { meta: ChatAttachment; file: File; url?: string }>();
   const timers = new Map<string, ReturnType<typeof setInterval>>();
   const chatEmit = (view: ChatView) => chatListeners.forEach((fn) => fn(structuredClone(view)));
   const chatView = (id: string): ChatView => {
@@ -190,6 +191,42 @@ function browserPreview(): ClientAPI {
       emit();
     },
     async readChat(id) { return structuredClone(chatView(id)); },
+    async selectChatFiles(id) {
+      const files = await new Promise<File[]>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file"; input.multiple = true; input.style.display = "none";
+        input.onchange = () => { resolve(Array.from(input.files || [])); input.remove(); };
+        input.oncancel = () => { resolve([]); input.remove(); };
+        document.body.append(input); input.click();
+      });
+      return this.importChatFiles({ id, files });
+    },
+    async importChatFiles({ id, files }) {
+      const task = state.tasks.find(t => t.id === id);
+      if (!task || task.archived_at) throw new Error("请先打开未归档的对话");
+      const added = files.map(file => {
+        const meta = { id: "att_" + crypto.randomUUID(), filename: file.name, mime: file.type || "application/octet-stream", bytes: file.size };
+        attachments.set(meta.id, { meta, file }); return meta;
+      });
+      task.attachments = [...(task.attachments || []), ...added]; emit(); return added;
+    },
+    async removeChatAttachment({ id, attachmentId }) {
+      const task = state.tasks.find(t => t.id === id);
+      if (task) task.attachments = (task.attachments || []).filter(a => a.id !== attachmentId);
+      emit();
+    },
+    async previewChatAttachment({ attachmentId }) {
+      const attachment = attachments.get(attachmentId);
+      if (!attachment?.meta.mime.startsWith("image/")) return null;
+      attachment.url ||= URL.createObjectURL(attachment.file); return attachment.url;
+    },
+    async saveChatAttachment({ attachmentId }) {
+      const attachment = attachments.get(attachmentId);
+      if (!attachment) throw new Error("附件不存在");
+      const url = URL.createObjectURL(attachment.file), link = document.createElement("a");
+      link.href = url; link.download = attachment.meta.filename; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
     async archiveTask({ id, archived }) {
       const task = state.tasks.find((t) => t.id === id);
       if (!task) throw new Error("对话不存在");
@@ -215,13 +252,14 @@ function browserPreview(): ClientAPI {
       const task = state.tasks.find((t) => t.id === id); if (task) task.state = "cancelled";
       view.cursor++; chatEmit(view); emit();
     },
-    async sendChat({ id, content }) {
+    async sendChat({ id, content, attachments: ids = [] }) {
       const view = chatView(id), task = state.tasks.find((t) => t.id === id);
       if (timers.has(id)) throw new Error("演示回复正在进行");
       const turn = { id: crypto.randomUUID(), chat_id: id, content, answer: "", state: "running" as const,
-        model_id: view.chat.model_id || "deepseek-flash", error: null, created_at: new Date().toISOString() };
+        attachments: ids.map(aid => attachments.get(aid)!.meta), model_id: view.chat.model_id || "deepseek-flash", error: null, created_at: new Date().toISOString() };
       view.turns.push(turn);
       if (task) { if (task.draft === content) task.draft = ""; task.state = "running"; }
+      if (task) task.attachments = (task.attachments || []).filter(a => !ids.includes(a.id));
       if (view.chat.route_state === "triage" && view.turns.length >= 2) {
         view.chat.model_id = "gpt-6-astra"; view.chat.route_state = "locked";
         view.chat.route_reason = "虚构分类：数学备课适合 GPT-6 Astra"; turn.model_id = "gpt-6-astra";

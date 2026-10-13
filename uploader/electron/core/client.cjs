@@ -11,6 +11,7 @@ const {
 } = require("./transport.cjs");
 const { windowsVolumes } = require("./volumes.cjs");
 const { ChatTransport } = require("./chat.cjs");
+const { ChatFiles } = require("./chat-files.cjs");
 
 class ClassroomClient extends EventEmitter {
   constructor(root, options = {}) {
@@ -43,6 +44,8 @@ class ClassroomClient extends EventEmitter {
     };
     this.chat = new ChatTransport(this.db, () => this.config(), () => this.token(),
       () => this.changed(), (view) => this.emit("chat", view), options.fetcher);
+    this.chatFiles = new ChatFiles(this);
+    this.sendingChats = new Set();
   }
   config() {
     return {
@@ -236,6 +239,22 @@ class ClassroomClient extends EventEmitter {
     }
     return view;
   }
+  async sendChat(input) {
+    if (this.sendingChats.has(input.id)) throw new Error("消息正在发送，请稍候");
+    if (typeof input.content !== "string" || !Array.isArray(input.attachments || []) || (!(input.content.trim()) && !input.attachments?.length)) throw new Error("请输入消息或添加附件");
+    this.sendingChats.add(input.id);
+    const scope = this.chat.scope();
+    try {
+      const turn = await this.chat.send(input, (...args) => this.chatFiles.upload(...args));
+      if (scope === this.chat.scope()) {
+        const task = this.db.setting("localTasks", []).find(t => t.id === input.id);
+        if (task?.draft === input.content) this.saveTaskDraft({ id: input.id, draft: "" });
+        for (const id of input.attachments || []) this.db.db.prepare("UPDATE chat_files SET draft=0 WHERE chat_id=? AND id=?").run(input.id, id);
+        this.changed();
+      }
+      return turn;
+    } finally { this.sendingChats.delete(input.id); }
+  }
   async archiveTask({ id, archived }) {
     if (typeof archived !== "boolean") throw new Error("归档状态无效");
     const tasks = this.db.setting("localTasks", []);
@@ -315,7 +334,7 @@ class ClassroomClient extends EventEmitter {
     return {
       mode: "desktop",
       version: this.version,
-      tasks,
+      tasks: tasks.map(t => ({ ...t, attachments: this.chatFiles?.drafts(t.id) || [] })),
       chatModels: this.chat.models.length ? this.chat.models : this.db.setting("chatModels:" + this.chat.scope(), []),
       deviceState: this.deviceState,
       config,
@@ -367,7 +386,8 @@ class ClassroomClient extends EventEmitter {
     this.timers.forEach(clearInterval);
     this.importer.stop();
     this.transport.shutdown();
-    await this.chat.close();
+    await Promise.allSettled([this.chat.close(), this.chatFiles.close()]);
+    while (this.sendingChats.size) await new Promise(resolve => setTimeout(resolve, 25));
     // Let active I/O unwind before closing SQLite.
     while (
       this.importer.scanning ||

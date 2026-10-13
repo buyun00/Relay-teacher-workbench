@@ -118,6 +118,7 @@ export interface LocalTask {
   id: string;
   title: string;
   draft: string;
+  attachments?: ChatAttachment[];
   createdAt: string;
   updatedAt: string;
   state?: ChatTurn["state"] | null;
@@ -136,7 +137,12 @@ export interface ClientAPI {
   saveTaskDraft(input: { id: string; draft: string }): Promise<unknown>;
   archiveTask(input: { id: string; archived: boolean }): Promise<unknown>;
   readChat(id: string): Promise<ChatView>;
-  sendChat(input: { id: string; content: string }): Promise<unknown>;
+  selectChatFiles(id: string): Promise<ChatAttachment[]>;
+  importChatFiles(input: { id: string; files: File[] }): Promise<ChatAttachment[]>;
+  removeChatAttachment(input: { id: string; attachmentId: string }): Promise<unknown>;
+  previewChatAttachment(input: { id: string; attachmentId: string; full?: boolean }): Promise<string | null>;
+  saveChatAttachment(input: { id: string; attachmentId: string }): Promise<unknown>;
+  sendChat(input: { id: string; content: string; attachments?: string[] }): Promise<unknown>;
   selectChatModel(input: { id: string; modelId: string }): Promise<ChatView>;
   cancelChat(id: string): Promise<unknown>;
   openLink(url: string): Promise<unknown>;
@@ -155,10 +161,15 @@ export interface ClientAPI {
   openDataDir(): Promise<unknown>;
 }
 export interface ChatModel { id: string; label: string; purpose: string }
+export interface ChatAttachment {
+  id: string; filename: string; mime: string; bytes: number;
+  status?: "ready" | "uploading" | "error"; uploadedBytes?: number; error?: string;
+}
 export interface ChatTurn {
   id: string; chat_id: string; content: string; answer: string;
   state: "queued" | "running" | "cancelling" | "completed" | "cancelled" | "failed" | "interrupted";
   model_id?: string | null; error: string | null; created_at: string;
+  attachments?: ChatAttachment[];
 }
 export interface ChatEvent {
   seq: number; chat_id: string; turn_id: string | null; kind: string; at: string;

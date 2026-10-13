@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArrowDown, ArrowUp, Check, ChevronDown, CircleAlert, Copy, LoaderCircle, MessageSquare, Sparkles, Square } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Check, ChevronDown, CircleAlert, Copy, LoaderCircle, MessageSquare, Paperclip, Sparkles, Square } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { bridge } from "./bridge";
+import { ModelPicker } from "./ModelPicker";
+import { ChatAttachments } from "./ChatAttachments";
 import type { ChatEvent, ChatTurn, ChatView, LocalTask, Snapshot } from "./types";
 
 const active = (t?: ChatTurn) => !!t && ["queued", "running", "cancelling"].includes(t.state);
@@ -12,7 +14,7 @@ const toolLabels: Record<string, string> = {
   teacher_context: "查看教师资料", teacher_read: "读取资料", teacher_query: "检索与统计",
   teacher_import: "导入资料", teacher_artifact: "处理报告与备课", teacher_record: "保存教学记录",
   teacher_correct: "保存更正", teacher_job: "跟进处理任务", teacher_courseware: "制作课件",
-  read_file: "读取文件", write_file: "写入文件", patch: "修改文件", terminal: "执行操作",
+  read_file: "读取文件", vision_analyze: "读取图片", write_file: "写入文件", patch: "修改文件", terminal: "执行操作",
   web_search: "搜索资料", web_extract: "阅读网页", skill_view: "查看制作工具", todo: "更新任务步骤",
 };
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
@@ -23,6 +25,8 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
   const [loading, setLoading] = useState(!!task);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null), stick = useRef(true);
   const taskId = task?.id;
@@ -54,37 +58,45 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
   }, [taskId]);
   const tail = view?.turns.at(-1);
   const busy = active(tail);
+  const attachments = task?.attachments || [];
   useEffect(() => {
     if (stick.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [view?.cursor, loading, taskId]);
-  const send = async (retryContent?: string) => {
-    const content = retryContent ?? draft;
-    if (!taskId || !content.trim() || busy || sending || disabled || archived) return;
+  const add = async (files?: File[]) => {
+    if (!taskId || archived || disabled || sending || adding) return;
+    setAdding(true);
+    try { await run(() => files ? bridge.importChatFiles({ id: taskId, files }) : bridge.selectChatFiles(taskId)); }
+    finally { setAdding(false); }
+  };
+  const send = async (retry?: ChatTurn) => {
+    const content = retry?.content ?? draft;
+    const ids = (retry?.attachments ?? attachments).map(a => a.id);
+    if (!taskId || (!content.trim() && !ids.length) || busy || sending || adding || disabled || archived || loading) return;
     setSending(true);
     stick.current = true;
     try {
       await run(async () => {
-        await bridge.sendChat({ id: taskId, content });
+        await bridge.sendChat({ id: taskId, content, attachments: ids });
         if (selectedId.current === taskId && currentDraft.current === content) setDraft("");
         // The selected stream carries the accepted turn; refresh also covers a slow initial connection.
         if (selectedId.current === taskId && (!view || view.connection === "offline")) await load();
       });
     } finally { setSending(false); }
   };
-  return <div className="chat-view">
+  return <div className="chat-view" onDragOver={e => {
+    if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); e.dataTransfer.dropEffect = archived || !task ? "none" : "copy"; setDragging(true); }
+  }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }} onDrop={e => {
+    e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) void add(Array.from(e.dataTransfer.files));
+  }}>
     <header className="pane-header chat-header">
       <h1>{task?.title || "新任务"}</h1>
       {archived && <span className="archive-badge"><Archive size={12} />已归档</span>}
-      {task && <label className="model-choice"><span className="sr-only">对话模型</span>
-        <select aria-label="对话模型" value={view?.chat.model_id || "auto"} disabled={disabled || busy || sending || loading || archived}
-          onChange={(e) => { const modelId = e.target.value, id = task.id; void run(async () => {
+      {task && <ModelPicker key={task.id} models={s.chatModels} value={view?.chat.model_id || "auto"}
+          disabled={disabled || busy || sending || loading || archived}
+          onChange={(modelId) => { const id = task.id; void run(async () => {
             const next = await bridge.selectChatModel({ id, modelId });
             if (selectedId.current === id) setView(next);
-          }); }}>
-          <option value="auto">自动 · DS 了解需求</option>
-          {s.chatModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-        </select><ChevronDown size={13} />
-      </label>}
+          }); }} />}
     </header>
     {view?.chat.route_reason && <div className="route-note" role="status">
       {view.chat.route_state === "locked" ? <Check size={13} /> : <MessageSquare size={13} />}
@@ -102,7 +114,8 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
       {error && <div className="chat-error" role="alert">{error}<button className="text-button" onClick={() => void load()}>重试连接</button></div>}
       {!!view?.turns.length && <div className="message-list">
         {view?.turns.map((turn) => <article className="chat-turn" key={turn.id}>
-          <div className="user-message"><div>{turn.content}</div></div>
+          <div className="user-message"><div>{turn.content && <div>{turn.content}</div>}
+            {!!turn.attachments?.length && <ChatAttachments chatId={view.chat.id} files={turn.attachments} run={run} />}</div></div>
           <div className="assistant-message">
             <Steps events={view.events.filter((e) => e.turn_id === turn.id)} busy={active(turn)} />
             {turn.answer && <div className="markdown-body" aria-label="AI 回复"><Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
@@ -115,7 +128,7 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
               {turn.state === "cancelled" && <span>已停止</span>}
               {turn.state === "interrupted" && <span>回复已中断</span>}
               {turn.error && <span className="chat-error-text">{turn.error}</span>}
-              {["failed", "interrupted"].includes(turn.state) && <button className="text-button" disabled={busy || sending} onClick={() => void send(turn.content)}>重新发送</button>}
+              {["failed", "interrupted"].includes(turn.state) && <button className="text-button" disabled={busy || sending || adding} onClick={() => void send(turn)}>重新发送</button>}
               {turn.answer && <CopyText text={turn.answer} />}
               {turn.model_id && <small>{s.chatModels.find((m) => m.id === turn.model_id)?.label || turn.model_id}</small>}
             </div>}
@@ -128,20 +141,25 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
       stick.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" });
     }}><ArrowDown size={16} /></button>}
     <div className="composer-area">
-      <div className="composer">
+      <div className={"composer " + (dragging ? "is-dragging" : "")}>
+        {!!attachments.length && task && <ChatAttachments chatId={task.id} files={attachments} run={run} removable disabled={sending || adding || archived} />}
         <textarea aria-label="消息草稿" autoFocus value={draft} disabled={!task || disabled || archived}
           placeholder={archived ? "恢复对话后继续聊天" : task ? "发消息，说说你想做什么…" : "新建一个任务，开始聊天"}
           onChange={(e) => { const value = e.target.value; setDraft(value); if (task) void run(() => bridge.saveTaskDraft({ id: task.id, draft: value })); }}
+          onPaste={e => { if (e.clipboardData.files.length) { e.preventDefault(); void add(Array.from(e.clipboardData.files)); } }}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); void send(); } }} />
-        <div className="composer-bottom"><small>{s.mode === "preview" ? "浏览器演示使用虚构回复" : "Enter 发送 · Shift + Enter 换行"}</small>
+        <div className="composer-bottom"><button className="attach-button" aria-label="添加附件" title="添加文件或图片，也可拖入文件、粘贴图片" disabled={!task || disabled || archived || sending || adding} onClick={() => void add()}>
+          {adding ? <LoaderCircle size={17} className="spin" /> : <Paperclip size={17} />}</button>
+          <small>{sending ? "正在发送消息及附件…" : adding ? "正在保存附件…" : s.mode === "preview" ? "浏览器演示使用虚构回复" : "Enter 发送 · 可拖入文件、粘贴图片"}</small>
           {busy ? <button className="send-button" aria-label="停止回复" disabled={tail?.state === "cancelling"} onClick={() => void run(() => bridge.cancelChat(task!.id))}><Square size={12} fill="currentColor" /></button>
-            : <button className="send-button" aria-label="发送消息" disabled={disabled || archived || !task || !draft.trim() || sending || loading} onClick={() => void send()}>
+            : <button className="send-button" aria-label="发送消息" disabled={disabled || archived || !task || (!draft.trim() && !attachments.length) || sending || adding || loading} onClick={() => void send()}>
               {sending ? <LoaderCircle size={17} className="spin" /> : <ArrowUp size={18} />}
             </button>}
         </div>
       </div>
-      {task && draft && <span className="draft-note">{task.draft === draft ? "草稿已保存在本机" : "正在保存草稿…"}</span>}
+      {task && (draft || attachments.length > 0) && <span className="draft-note">{task.draft === draft ? "草稿已保存在本机" : "正在保存草稿…"}</span>}
     </div>
+    {dragging && task && !archived && <div className="attachment-drop-hint"><Paperclip size={24} />松开即可添加到这条消息</div>}
   </div>;
 }
 

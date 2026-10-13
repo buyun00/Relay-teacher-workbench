@@ -14,6 +14,7 @@ const {
   clipboard,
 } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs/promises");
 const { pathToFileURL } = require("node:url");
 const { ClassroomClient } = require("./core/client.cjs");
 const { Updates } = require("./core/updater.cjs");
@@ -117,11 +118,29 @@ function handlers() {
   handle("task-draft", (input) => client.saveTaskDraft(input));
   handle("task-archive", (input) => client.archiveTask(input));
   handle("chat-read", (id) => client.readChat(id));
-  handle("chat-send", async (input) => {
-    const turn = await client.chat.send(input);
-    const draft = client.db.setting("localTasks", []).find((t) => t.id === input.id)?.draft;
-    if (draft === input.content) client.saveTaskDraft({ id: input.id, draft: "" });
-    return turn;
+  handle("chat-send", (input) => client.sendChat(input));
+  handle("chat-select-files", async (id) => {
+    const result = await dialog.showOpenDialog(window, { title: "添加到消息", buttonLabel: "添加附件", properties: ["openFile", "multiSelections"] });
+    if (result.canceled || !result.filePaths.length) return [];
+    return client.chatFiles.add({ id, files: result.filePaths.map(path => ({ path })) });
+  });
+  handle("chat-import-files", (input) => client.chatFiles.add(input));
+  handle("chat-remove-file", (input) => client.chatFiles.remove(input));
+  handle("chat-preview-file", async (input) => {
+    const file = await client.chatFiles.ensure(input);
+    if (!file.mime.startsWith("image/")) return null;
+    let image = nativeImage.createFromPath(file.path);
+    if (image.isEmpty()) return null;
+    if (!input.full) {
+      const size = image.getSize(), ratio = Math.min(1, 320 / size.width, 180 / size.height);
+      image = image.resize({ width: Math.max(1, Math.round(size.width * ratio)), height: Math.max(1, Math.round(size.height * ratio)) });
+    }
+    return image.toDataURL();
+  });
+  handle("chat-save-file", async (input) => {
+    const file = await client.chatFiles.ensure(input);
+    const result = await dialog.showSaveDialog(window, { title: "保存附件", defaultPath: file.filename });
+    if (!result.canceled && result.filePath) await fs.copyFile(file.path, result.filePath);
   });
   handle("chat-model", (input) => client.chat.model(input));
   handle("chat-cancel", (id) => client.chat.cancel(id));

@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("classroom", {
   snapshot: () => ipcRenderer.invoke("client:snapshot"),
@@ -9,6 +9,18 @@ contextBridge.exposeInMainWorld("classroom", {
   saveTaskDraft: (input) => ipcRenderer.invoke("client:task-draft", input),
   archiveTask: (input) => ipcRenderer.invoke("client:task-archive", input),
   readChat: (id) => ipcRenderer.invoke("client:chat-read", id),
+  selectChatFiles: (id) => ipcRenderer.invoke("client:chat-select-files", id),
+  importChatFiles: async ({ id, files }) => {
+    const sources = [];
+    for (const file of files) {
+      const path = webUtils.getPathForFile(file);
+      sources.push(path ? { path, mime: file.type } : { filename: file.name, mime: file.type, data: new Uint8Array(await file.arrayBuffer()) });
+    }
+    return ipcRenderer.invoke("client:chat-import-files", { id, files: sources });
+  },
+  removeChatAttachment: (input) => ipcRenderer.invoke("client:chat-remove-file", input),
+  previewChatAttachment: (input) => ipcRenderer.invoke("client:chat-preview-file", input),
+  saveChatAttachment: (input) => ipcRenderer.invoke("client:chat-save-file", input),
   sendChat: (input) => ipcRenderer.invoke("client:chat-send", input),
   selectChatModel: (input) => ipcRenderer.invoke("client:chat-model", input),
   cancelChat: (id) => ipcRenderer.invoke("client:chat-cancel", id),

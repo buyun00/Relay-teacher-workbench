@@ -151,6 +151,32 @@ async function startReceiver(root) {
     const taskDraft = "EXPLICITLY FICTIONAL TASK DRAFT; NOT SENT TO A SERVICE";
     await window.getByRole("textbox", { name: "消息草稿" }).fill(taskDraft);
     await expect.poll(() => window.evaluate(() => window.classroom.snapshot()).then((s) => s.tasks[0]?.draft)).toBe(taskDraft);
+    const chatId = (await window.evaluate(() => window.classroom.snapshot())).tasks[0].id;
+    const chatFile = path.join(root, "fictional-chat-reference.custom");
+    const chatContent = Buffer.from("EXPLICITLY FICTIONAL CHAT REFERENCE 7319; NOT AUDIO");
+    await fsp.writeFile(chatFile, chatContent);
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = async (_window, options) => {
+        if (!options.properties.includes("multiSelections") || options.filters) throw new Error("Chat accepts arbitrary multi-file attachments");
+        return { canceled: false, filePaths: [filename] };
+      };
+    }, chatFile);
+    await window.getByRole("button", { name: "添加附件", exact: true }).click();
+    await expect(window.getByLabel("待发送附件").locator(".chat-attachment")).toHaveCount(1);
+    const pastedPNG = await window.getByLabel("消息草稿").evaluate(el => {
+      const canvas = document.createElement("canvas"); canvas.width = 320; canvas.height = 160;
+      const ctx = canvas.getContext("2d"); ctx.fillStyle = "#728c7a"; ctx.fillRect(0, 0, 320, 160);
+      ctx.fillStyle = "white"; ctx.font = "22px sans-serif"; ctx.fillText("FICTIONAL IMAGE 9264", 20, 85);
+      const data = canvas.toDataURL().split(",")[1];
+      const transfer = new DataTransfer(); transfer.items.add(new File([Uint8Array.from(atob(data), c => c.charCodeAt(0))], "fictional-pasted.png", { type: "image/png" }));
+      el.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }));
+      return data;
+    });
+    await expect(window.getByLabel("待发送附件").locator(".chat-attachment")).toHaveCount(2);
+    await expect(window.getByLabel("待发送附件").getByRole("img")).toBeVisible();
+    const chatAttachments = (await window.evaluate(() => window.classroom.snapshot())).tasks[0].attachments;
+    await fsp.unlink(chatFile);
+    assert.equal((await window.evaluate(() => window.classroom.snapshot())).files.length, 0);
     await window.evaluate(() => window.classroom.pause(true));
 
     const device = path.join(root, "fictional-device");
@@ -259,16 +285,35 @@ async function startReceiver(root) {
     assert.equal(state.files.length, 2);
     assert.ok(state.files.every((file) => file.state === "received"));
     assert.equal(state.tasks[0].draft, taskDraft);
+    assert.deepEqual(state.tasks.find(t => t.id === chatId).attachments.map(a => a.id), chatAttachments.map(a => a.id));
     assert.equal(state.config.pauseUploads, true);
     assert.equal(state.config.hasToken, true);
     const storedBytes = await fsp.readFile(path.join(profile, "queue.sqlite"));
     assert.equal(storedBytes.includes(Buffer.from(token)), false);
+    const turn = await window.evaluate(input => window.classroom.sendChat(input), { id: chatId, content: "", attachments: chatAttachments.map(a => a.id) });
+    assert.deepEqual(turn.attachments.map(a => a.id), chatAttachments.map(a => a.id));
+    assert.equal((await window.evaluate(() => window.classroom.snapshot())).tasks.find(t => t.id === chatId).attachments.length, 0);
+    const view = await window.evaluate(id => window.classroom.readChat(id), chatId);
+    assert.equal(view.turns.length, 1); assert.equal(view.chat.hermes_session_id, "teacher-desktop-" + chatId);
+    for (const attachment of chatAttachments) {
+      const original = path.join(root, "receiver", "originals", "chat-attachments", attachment.id, attachment.filename);
+      const expected = attachment.mime === "image/png" ? Buffer.from(pastedPNG, "base64") : chatContent;
+      assert.deepEqual(await fsp.readFile(original), expected);
+    }
+    await app.close(); app = null;
+    // Remove just this isolated fixture's local image to exercise authenticated history download.
+    const image = chatAttachments.find(a => a.mime === "image/png");
+    await fsp.unlink(path.join(profile, "chat-attachments", image.id, image.filename));
+    app = await launch(); window = await app.firstWindow();
+    await window.waitForFunction(() => !!window.classroom && !!document.querySelector(".app-shell"));
+    assert.ok(await window.evaluate(input => window.classroom.previewChatAttachment(input), { id: chatId, attachmentId: image.id }));
+    assert.deepEqual(await fsp.readFile(path.join(profile, "chat-attachments", image.id, image.filename)), Buffer.from(pastedPNG, "base64"));
     if (localBuild) {
       assert.equal(state.update.state, "local");
       console.log("Local installer acceptance passed: explicit local version, updates disabled, retained queue and settings.");
     }
     console.log(
-      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, device and multi-file manual copy, cancellation/deduplication, source removal before upload, persisted receiver receipt/status, restart preserves queue and pause.`,
+      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, recording copy/receipt/restart, arbitrary chat file picker and pasted image IPC, source removal, attachment-only persisted turn, authenticated history image download.`,
     );
   } finally {
     if (app) {

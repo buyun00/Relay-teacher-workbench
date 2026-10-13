@@ -118,7 +118,7 @@ class Chats:
         with self.store.connect() as db:
             db.execute("BEGIN")  # Snapshot and cursor describe the same committed generation.
             chat = self.chat(chat_id, db)
-            turns = [dict(r) for r in db.execute("SELECT * FROM desktop_turns WHERE chat_id=? ORDER BY rowid", (chat_id,))]
+            turns = [self._turn(db, r) for r in db.execute("SELECT * FROM desktop_turns WHERE chat_id=? ORDER BY rowid", (chat_id,))]
             cursor = db.execute("SELECT COALESCE(MAX(seq),0) FROM desktop_chat_events WHERE chat_id=?", (chat_id,)).fetchone()[0]
             events = self._events(db, chat_id, 0, kinds=("tool_start", "tool_end", "status", "route", "notice", "commentary"))
         return {"chat": chat, "turns": turns, "events": events, "cursor": cursor,
@@ -139,34 +139,50 @@ class Chats:
     def submit(self, chat_id, payload):
         turn_id = valid_id(payload.get("id"))
         content = payload.get("content")
-        if not isinstance(content, str) or not content.strip():
-            raise WorkbenchError("请先输入消息")
+        attachment_ids = payload.get("attachments", [])
+        if not isinstance(attachment_ids, list) or any(not isinstance(v, str) for v in attachment_ids) or len(set(attachment_ids)) != len(attachment_ids):
+            raise WorkbenchError("消息附件信息无效")
+        if not isinstance(content, str) or (not content.strip() and not attachment_ids):
+            raise WorkbenchError("请输入消息或添加附件")
         stamp = now()
         with self.store.transaction() as db:
             chat = self.chat(chat_id, db)
             old = db.execute("SELECT * FROM desktop_turns WHERE id=?", (turn_id,)).fetchone()
             if old:
-                if old["chat_id"] != chat_id or old["content"] != content:
+                old = self._turn(db, old)
+                if old["chat_id"] != chat_id or old["content"] != content or [a["id"] for a in old["attachments"]] != attachment_ids:
                     raise WorkbenchError("消息标识已用于另一条消息")
-                return dict(old)
+                return old
             if chat["archived_at"]:
                 raise WorkbenchError("请先取消归档再继续对话")
             if db.execute("SELECT 1 FROM desktop_turns WHERE chat_id=? AND state IN ('queued','running','cancelling')", (chat_id,)).fetchone():
                 raise WorkbenchError("当前回复正在进行，请等待或停止后发送")
+            from .attachments import ChatAttachments, public_attachment
+            files = ChatAttachments(self)
+            attachments = [files.row(chat_id, aid, db) for aid in attachment_ids]
+            if any(not a["received_at"] for a in attachments):
+                raise WorkbenchError("请等待附件传完后再发送")
             db.execute("INSERT INTO desktop_turns(id,chat_id,content,created_at,updated_at) VALUES(?,?,?,?,?)",
                        (turn_id, chat_id, content, stamp, stamp))
+            db.executemany("INSERT INTO desktop_turn_attachments(turn_id,attachment_id,position) VALUES(?,?,?)",
+                           [(turn_id, aid, i) for i, aid in enumerate(attachment_ids)])
             first = db.execute("SELECT COUNT(*) FROM desktop_turns WHERE chat_id=?", (chat_id,)).fetchone()[0] == 1
             db.execute("UPDATE desktop_chats SET title=?,updated_at=? WHERE id=?",
-                       (content.strip().splitlines()[0][:36] if first else chat["title"], stamp, chat_id))
-            self._event(db, chat_id, turn_id, "turn", {"id": turn_id, "content": content, "state": "queued", "answer": "", "created_at": stamp})
+                       ((content.strip().splitlines()[0] if content.strip() else attachments[0]["filename"])[:36] if first else chat["title"], stamp, chat_id))
+            self._event(db, chat_id, turn_id, "turn", {"id": turn_id, "content": content, "attachments": [public_attachment(a) for a in attachments], "state": "queued", "answer": "", "created_at": stamp})
         return self.turn(turn_id)
 
     def turn(self, turn_id):
         with self.store.connect() as db:
             row = db.execute("SELECT * FROM desktop_turns WHERE id=?", (valid_id(turn_id),)).fetchone()
-        if not row:
-            raise WorkbenchError("消息不存在")
-        return dict(row)
+            if not row:
+                raise WorkbenchError("消息不存在")
+            return self._turn(db, row)
+
+    def _turn(self, db, row):
+        from .attachments import public_attachment
+        attachments = db.execute("SELECT a.* FROM desktop_turn_attachments t JOIN desktop_chat_attachments a ON a.id=t.attachment_id WHERE t.turn_id=? ORDER BY t.position", (row["id"],))
+        return {**dict(row), "attachments": [public_attachment(a) for a in attachments]}
 
     def select_model(self, chat_id, payload):
         model_id = payload.get("model_id")

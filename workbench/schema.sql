@@ -133,3 +133,14 @@ CREATE TABLE IF NOT EXISTS desktop_chat_metadata(
   chat_id TEXT PRIMARY KEY REFERENCES desktop_chats(id), archived_at TEXT,
   title_source TEXT NOT NULL DEFAULT 'fallback', CHECK(title_source IN ('fallback','ai'))
 );
+CREATE TABLE IF NOT EXISTS desktop_chat_attachments(
+  id TEXT PRIMARY KEY, chat_id TEXT NOT NULL REFERENCES desktop_chats(id),
+  filename TEXT NOT NULL, mime TEXT NOT NULL, byte_length INTEGER NOT NULL,
+  sha256 TEXT NOT NULL, offset INTEGER NOT NULL DEFAULT 0, received_at TEXT,
+  CHECK(byte_length >= 0 AND offset >= 0 AND offset <= byte_length)
+);
+CREATE TABLE IF NOT EXISTS desktop_turn_attachments(
+  turn_id TEXT NOT NULL REFERENCES desktop_turns(id),
+  attachment_id TEXT NOT NULL REFERENCES desktop_chat_attachments(id), position INTEGER NOT NULL,
+  PRIMARY KEY(turn_id,attachment_id), UNIQUE(turn_id,position)
+);
