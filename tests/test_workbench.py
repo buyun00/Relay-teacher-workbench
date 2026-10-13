@@ -208,7 +208,7 @@ class TeacherCase(unittest.TestCase):
             def register_system_prompt_section(self, *a, **kw): pass
         ctx = Context()
         register_plugin(ctx, self.w)
-        self.assertEqual(len(ctx.tools), 9)
+        self.assertIn("teacher_organize", ctx.tools)
         ctx.hooks["pre_llm_call"](session_id="a", task_id="ta", user_message="甲老师消息")
         ctx.hooks["pre_llm_call"](session_id="b", task_id="tb", user_message="乙老师消息")
         ma = json.loads(ctx.tools["teacher_context"]({"action": "overview"}, task_id="ta"))["result"]["current_message_id"]

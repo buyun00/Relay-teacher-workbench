@@ -130,7 +130,30 @@ export interface LocalTask {
   archived_at?: string | null;
   title_source?: "fallback" | "ai";
 }
+export interface OrganizationEvent {
+  id: string; title: string; detail: string; question: string; sources: {kind: string; id: string; revision: number}[];
+  student_id: string | null; role: "student" | "teacher" | "unknown";
+  resolution: "pending" | "clear" | "confirmed" | "unknown"; note?: string;
+  at: string | null; offset: number; asset_id: string; speaker_label: string | null;
+  context: {id: string; start: number; text: string; speaker: string | null; target: boolean}[];
+}
+export interface RecordingActivity {
+  id: string; title: string; kind: "class" | "conversation" | "other"; period: string;
+  started_at: string | null; ended_at: string | null; asset_ids: string[];
+  class_id: string | null; class_source: "schedule" | "manual" | "unknown";
+  status: "draft" | "saved"; revision: number; stale: boolean; lesson_id: string | null;
+  events: OrganizationEvent[]; notes: {event_id: string; text: string; created_at: string}[];
+}
+export interface ScheduleEntry {id?: string; revision?: number; class_id: string; weekday: number; date?: string | null; start: string; end: string; period: string}
+export interface OrganizationData {
+  schedule_revision?: number;
+  classes: {id: string; name: string}[];
+  students: {id: string; name: string; class_id: string}[];
+  schedule: ScheduleEntry[]; activities: RecordingActivity[];
+}
 export interface ClientAPI {
+  organization(): Promise<OrganizationData>;
+  organize(input: Record<string, unknown>): Promise<unknown>;
   runtimeReady(): Promise<unknown>;
   snapshot(): Promise<Snapshot>;
   subscribe(callback: (snapshot: Snapshot) => void): () => void;

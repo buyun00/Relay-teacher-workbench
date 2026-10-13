@@ -113,6 +113,11 @@ function handlers() {
       return fn(input);
     });
   handle("snapshot", () => client.snapshot());
+  handle("organization", () => client.transport.request("/v1/organization"));
+  handle("organize", (input) => client.transport.request("/v1/organization", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, workspace_id: client.config().workspaceId }),
+  }));
   handle("runtime-ready", () => { rendererReady = true; confirmRuntime(); });
   handle("create-task", () => client.createTask());
   handle("task-draft", (input) => client.saveTaskDraft(input));

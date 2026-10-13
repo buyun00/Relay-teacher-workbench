@@ -1,4 +1,23 @@
 PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS recording_activities (
+  id TEXT PRIMARY KEY, body TEXT NOT NULL, original TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'draft',
+  lesson_id TEXT REFERENCES lessons(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  CHECK(status IN ('draft','saved'))
+);
+CREATE TABLE IF NOT EXISTS recording_activity_assets (
+  activity_id TEXT NOT NULL REFERENCES recording_activities(id) ON DELETE CASCADE,
+  asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  PRIMARY KEY(activity_id,asset_id)
+);
+CREATE TABLE IF NOT EXISTS recording_analyses (
+  asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+  sources TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recording_schedule (
+  id TEXT PRIMARY KEY, body TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS classes (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, school_year TEXT
@@ -152,3 +171,11 @@ CREATE TABLE IF NOT EXISTS desktop_turn_outputs(
   PRIMARY KEY(turn_id,attachment_id), UNIQUE(turn_id,position),
   UNIQUE(turn_id,source_path,source_size,source_mtime)
 );
+
+-- Native corrections invalidate the activity's edit token as well as downstream artifacts.
+CREATE TRIGGER IF NOT EXISTS recording_event_revision AFTER UPDATE ON events BEGIN
+  UPDATE recording_activities SET revision=revision+1 WHERE lesson_id=NEW.lesson_id;
+END;
+CREATE TRIGGER IF NOT EXISTS recording_lesson_revision AFTER UPDATE ON lessons BEGIN
+  UPDATE recording_activities SET revision=revision+1 WHERE lesson_id=NEW.id;
+END;

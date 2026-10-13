@@ -42,6 +42,8 @@ class Maintenance:
         possible |= {self.store.one("exams", eid, db)["source_asset_id"] for eid in exams}
         retained = {r["asset_id"] for r in db.execute("SELECT * FROM lesson_assets") if r["lesson_id"] not in lessons}
         retained |= {r["source_asset_id"] for r in db.execute("SELECT * FROM exams") if r["id"] not in exams}
+        activities = {r["id"] for r in db.execute("SELECT id,lesson_id FROM recording_activities") if r["lesson_id"] in lessons}
+        retained |= {r["asset_id"] for r in db.execute("SELECT activity_id,asset_id FROM recording_activity_assets") if r["activity_id"] not in activities}
         assets = possible - retained
         transcripts = {r["id"] for r in db.execute("SELECT * FROM transcripts") if r["asset_id"] in assets}
         segments = {r["id"] for r in db.execute("SELECT id,transcript_id FROM segments") if r["transcript_id"] in transcripts}
@@ -73,6 +75,7 @@ class Maintenance:
         # Known local backups may contain the deleted scope. Purge them all, clearly in the plan.
         paths |= {str(p.relative_to(self.store.root)) for p in (self.store.root / "backups").iterdir()}
         result = {"lessons": sorted(lessons), "exams": sorted(exams), "events": sorted(events), "scores": sorted(scores),
+                  "recording_activities": sorted(activities),
                   "assets": sorted(assets), "transcripts": sorted(transcripts), "segments": sorted(segments),
                   "artifacts": sorted(artifacts), "jobs": sorted(jobs), "recording_workflows": sorted(removed_workflows),
                   "affected_recording_workflows": sorted(affected_workflows), "paths": sorted(paths), "external_copies": self.external_copies()}
@@ -115,7 +118,7 @@ class Maintenance:
             remove("jobs", plan["jobs"])
             remove("artifacts", plan["artifacts"])
             remove("questions", plan["lessons"], "lesson_id")
-            for kind, ids in [("event", plan["events"]),("segment",plan["segments"]),("lesson",plan["lessons"]),("score",plan["scores"])]:
+            for kind, ids in [("recording_activity",plan["recording_activities"]),("event", plan["events"]),("segment",plan["segments"]),("lesson",plan["lessons"]),("score",plan["scores"])]:
                 if ids:
                     db.execute(f"DELETE FROM corrections WHERE target_kind=? AND target_id IN ({','.join('?' for _ in ids)})", (kind,*ids))
             remove("events", plan["events"])

@@ -27,6 +27,18 @@ def schema(name, description, properties, required=()):
 
 
 SCHEMAS = [
+    schema("teacher_organize", "按录音内容跨文件整理活动草稿。不能推定学生实名；教师确认后才入库。先 context 读取当前草稿和原文版本，propose 必须保留全部有效内容，仅少量歧义片段设置 question。", {
+        "action": prop("string", enum=["context", "propose"]),
+        "asset_id": prop("string", "context 时指定录音，仅加载当日相邻录音"),
+        "asset_ids": prop("array", items=prop("string")),
+        "activities": prop("array", items=prop("object", properties={
+            "id": prop("string"), "expected_revision": prop("integer"),
+            "title": prop("string"), "kind": prop("string", enum=["class", "conversation", "other"]),
+            "period": prop("string"), "events": prop("array", items=prop("object", properties={
+                "title": prop("string"), "detail": prop("string"), "question": prop("string"), "sources": SOURCES
+            }, required=["title", "detail", "sources"], additionalProperties=False))
+        }, required=["title", "kind", "events"], additionalProperties=False))
+    }, ["action"]),
     schema("teacher_context", "查看当前教师空间、名单、资料覆盖与待确认问题。", {"action": prop("string", enum=["overview", "questions"]), **SCOPE, "lesson_id": prop("string"), "status": prop("string", enum=["open", "answered", "skipped"]), "limit": prop("integer")}, ["action"]),
     schema("teacher_import", "导入指定路径的教学资料。成绩/名单格式见 Skill，时间与身份未知时保留未知。", {
         "action": prop("string", enum=["roster", "lesson", "transcript", "audio", "scores", "document", "link"]),

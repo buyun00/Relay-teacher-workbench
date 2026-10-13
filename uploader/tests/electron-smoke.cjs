@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { _electron: electron, expect } = require("@playwright/test");
 const { checkAttachmentDownload } = require("./attachment-download.cjs");
+const { checkOrganization } = require("./organization-e2e.cjs");
 
 async function checkTitleBar(app, page) {
   await expect(page.getByRole("banner", { name: "窗口标题栏" })).toContainText("课堂连接");
@@ -326,6 +327,7 @@ async function startReceiver(root) {
       const expected = file.sourceName === "手动上传" ? manualContent : content;
       assert.equal(await fsp.readFile(serverOriginal).then((bytes) => bytes.equals(expected)), true);
     }
+    await checkOrganization(window, root);
     if (localBuild)
       assert.equal(await app.evaluate(() => globalThis.localUpdateChecks), 0);
     await window.evaluate(() => window.classroom.pause(true));
@@ -341,6 +343,9 @@ async function startReceiver(root) {
     state = await window.evaluate(() => window.classroom.snapshot());
     assert.equal(state.files.length, 2);
     assert.ok(state.files.every((file) => file.state === "received"));
+    const savedOrganization = await window.evaluate(() => window.classroom.organization());
+    assert.equal(savedOrganization.activities[0].status, "saved");
+    assert.ok(savedOrganization.activities[0].events.some(e => e.note?.includes("任意两点")));
     assert.equal(state.tasks[0].draft, taskDraft);
     assert.deepEqual(state.tasks.find(t => t.id === chatId).attachments.map(a => a.id), chatAttachments.map(a => a.id));
     assert.equal(state.config.pauseUploads, true);

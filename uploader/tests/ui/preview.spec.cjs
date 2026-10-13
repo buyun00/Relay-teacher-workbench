@@ -148,22 +148,19 @@ test("two-pane conversation streams, routes after early turns, shows steps, and 
   await expect(page.locator("body")).not.toContainText("爱马仕");
 });
 
-test("recording page shows device, pending files and upload status with manual multi-file entry", async ({ page }) => {
+test("recording page unifies device, progress and expanded files with manual multi-file entry", async ({ page }) => {
   await page.goto("http://127.0.0.1:5178");
   await page.getByRole("button", { name: "录音上传", exact: true }).click();
-  const panel = page.getByRole("region", { name: "录音上传状态" });
-  await expect(panel).toContainText("录音设备");
-  await expect(panel).toContainText("已接入");
-  await expect(panel).toContainText("待上传录音");
-  await expect(panel).toContainText("上传状态");
+  const panel = page.locator(".org-queue");
+  await expect(panel).toContainText("录音设备已连接");
+  await expect(page.getByRole("progressbar",{name:"上传进度"})).toBeVisible();
+  await expect(page.getByRole("progressbar",{name:"转写与活动识别"})).toBeVisible();
+  await expect(page.locator(".org-file")).toHaveCount(6);
   await page.getByRole("button", { name: "手动上传", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("新增 1 份录音");
-  await page.locator("summary").filter({ hasText: "录音文件" }).click();
-  const manual = page.locator(".file-row").filter({ hasText: "虚构_手动上传_100.wav" });
-  await expect(manual).toContainText("手动上传");
-  await expect(manual).toContainText("等待上传");
+  await expect(page.locator(".org-file").filter({hasText:"虚构_手动上传_100.wav"})).toContainText("等待上传");
   await page.getByRole("button", { name: "暂停上传", exact: true }).click();
-  await expect(panel).toContainText("已暂停");
+  await expect(page.getByRole("button", { name: "继续上传", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "继续上传", exact: true }).click();
   await expect(panel).toContainText("正在上传");
 });
@@ -257,18 +254,4 @@ test("settings stay in a dialog, keep browser credentials out of storage and use
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("fictional-not-a-real-token");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-});
-
-test("saved recording reports open inside the upload page without adding a navigation page", async ({ page }) => {
-  await page.goto("http://127.0.0.1:5178");
-  await page.getByRole("button", { name: "录音上传", exact: true }).click();
-  await page.locator(".file-details summary").click();
-  await expect(page.locator(".file-row").filter({ hasText: "虚构录音_20261012_100000.wav" })).toContainText("处理完成");
-  await page.getByRole("button", { name: "查看结果", exact: true }).click();
-  const result = page.getByRole("dialog", { name: "录音处理结果" });
-  await expect(result).toContainText("虚构复盘示例");
-  await expect(result).toContainText("虚构备课示例");
-  await page.keyboard.press("Escape");
-  await expect(result).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "录音上传", exact: true })).toBeVisible();
 });

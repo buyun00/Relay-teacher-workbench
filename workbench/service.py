@@ -26,6 +26,13 @@ class Workbench:
         a = dict(args)
         action = a.pop("action", None)
         context = context or {}
+        if tool == "teacher_organize":
+            from .organization import Organization
+            organization = Organization(self.store)
+            if action == "context":
+                return organization.evidence(**a)
+            if action == "propose":
+                return organization.propose(**a, binding=context.get("recording_workflow"))
         if tool == "teacher_context":
             if action == "overview":
                 result = self.query.coverage(**a)

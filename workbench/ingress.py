@@ -328,6 +328,14 @@ class Handler(BaseHTTPRequestHandler):
                 result = ingress.open(self.payload())
             elif self.command == "POST" and parsed.path == "/v1/status":
                 result = ingress.statuses(self.payload())
+            elif parsed.path == "/v1/organization" and self.command in {"GET", "POST"}:
+                from .organization import Organization
+                organization = Organization(ingress.store)
+                if self.command == "GET":
+                    result = organization.catalog()
+                else:
+                    payload = self.chat_payload()
+                    result = organization.command(payload.pop("action"), payload)
             elif self.command == "GET" and parsed.path == "/v1/chat-models":
                 result = self.server.chats.models()
             elif parsed.path == "/v1/chats" and self.command in {"GET", "POST"}:

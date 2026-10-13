@@ -1,6 +1,8 @@
 import type { ChatAttachment, ChatView, ClientAPI, Recording, Snapshot } from "./types";
+import { organizationPreview } from "./organizationPreview";
 
 function browserPreview(): ClientAPI {
+  const organization = organizationPreview();
   const date = "2026-10-12";
   const make = (
     n: number,
@@ -150,6 +152,7 @@ function browserPreview(): ClientAPI {
     emit();
   };
   return {
+    ...organization,
     runtimeReady: async () => {},
     snapshot: async () => structuredClone(state),
     subscribe(fn) {

@@ -19,7 +19,7 @@ class RecordingCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="fictional-recording-workflow-")
         self.w = Workbench(Config(root=Path(self.temp.name), workspace_id="fictional-demo",
-                                  auto_process_recordings=True))
+                                  auto_process_recordings=True, recording_output="reports"))
         self.ingress = DesktopIngress(self.w.store)
         self.calls = []
         self.pending = True
