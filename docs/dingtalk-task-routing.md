@@ -77,8 +77,10 @@ python ops/install_task_routing.py --router /opt/data/plugins/smart-chat-router 
 
 最终回归 `py -3 -m unittest tests.test_gateway_tasks tests.test_chats tests.test_gateway_delivery -q` 共 53 项通过。最后一次原生入口验收使用 `hook-final-fictional`，确认完整素材批次和生活问答隔离。
 
+代码提交 `ddeb3c9` 已推送 GitHub。[GitHub Actions 38370750947](https://github.com/buyun00/Relay-teacher-workbench/actions/runs/38370750947) 的全量 Python、客户端队列与浏览器、Electron、`npm run pack:win`、打包 EXE、内容更新和发布均成功；没有构建本地安装包。
+
 ## 部署记录
 
-候选尚未切换线上。2026-10-13 备份接入前检查时，现有 Hermes 报告 1 个执行中的轮次，安装未修改线上代码，等待其自然结束。
+候选尚未切换线上。2026-10-13 16:46（Asia/Shanghai）接入前复查时，现有 Hermes 仍报告 1 个活动工作单元，安装检查未修改线上代码。原生计数包含聊天、定时和 API 等工作，当前接口未提供此单元的归属；没有据此中止任何现有任务。
 
 `ops/deploy_task_routing.sh` 使用原生状态查询、插件检查和 `reload-plugins`。默认只检查；将已上传的候选目录传入 `TASK_ROUTING_CANDIDATE`，设置 `APPLY_TASK_ROUTING=1` 后，仅写入现有路由入口和两个任务模块。热加载失败会恢复本次代码备份，保留业务数据库和素材，不重启 Hermes、ASR、TTS 或教师接收端。
