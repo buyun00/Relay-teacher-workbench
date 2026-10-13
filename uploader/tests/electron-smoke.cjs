@@ -7,6 +7,61 @@ const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { _electron: electron, expect } = require("@playwright/test");
 
+async function checkTitleBar(app, page) {
+  await expect(page.getByRole("banner", { name: "窗口标题栏" })).toContainText("课堂连接");
+  assert.equal(await page.locator(".sidebar .app-name").count(), 0);
+  const layout = await page.evaluate(() => {
+    const overlay = navigator.windowControlsOverlay;
+    const header = document.querySelector(".window-titlebar");
+    const content = document.querySelector(".window-titlebar-content").getBoundingClientRect();
+    return {
+      visible: overlay?.visible, safe: overlay?.getTitlebarAreaRect().toJSON(),
+      header: header.getBoundingClientRect().toJSON(), content: content.toJSON(),
+      drag: getComputedStyle(header).getPropertyValue("app-region"),
+      scrollHeight: document.documentElement.scrollHeight, viewport: innerHeight,
+    };
+  });
+  assert.equal(layout.visible, true);
+  assert.equal(layout.header.top, 0);
+  assert.equal(layout.drag, "drag");
+  assert.ok(layout.content.right <= layout.safe.right + 1);
+  assert.ok(layout.content.left >= layout.safe.left - 1);
+  assert.ok(Math.abs(layout.scrollHeight - layout.viewport) < 2);
+}
+
+async function checkNativeWindowActions(app) {
+  // Exercise the actual Windows caption commands, including our close-to-tray handler.
+  if (process.platform !== "win32") return;
+  const handle = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getNativeWindowHandle().readBigUInt64LE().toString(),
+  );
+  const state = () => app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    return { maximized: win.isMaximized(), minimized: win.isMinimized(), hidden: !win.isVisible(), alive: !win.isDestroyed() };
+  });
+  for (const [message, command, key, value] of [[0xA3, 2, "maximized", true], [0xA3, 2, "maximized", false],
+    [0x112, 0xF030, "maximized", true], [0x112, 0xF120, "maximized", false],
+    [0x112, 0xF020, "minimized", true], [0x112, 0xF120, "minimized", false], [0x112, 0xF060, "hidden", true]]) {
+    if (command === 0xF060) {
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+      assert.equal((await state()).hidden, false);
+    }
+    const child = spawn(process.env.CI ? "python" : "py", ["-c", [
+      "import ctypes,sys",
+      "from ctypes import wintypes",
+      "u=ctypes.WinDLL('user32',use_last_error=True)",
+      "u.PostMessageW.argtypes=[wintypes.HWND,wintypes.UINT,wintypes.WPARAM,wintypes.LPARAM]",
+      "assert u.PostMessageW(int(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]),0),ctypes.get_last_error()",
+    ].join("\n"), handle, String(message), String(command)], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    let errors = "";
+    child.stderr.on("data", chunk => { errors += chunk; });
+    const [code] = await once(child, "exit");
+    assert.equal(code, 0, errors);
+    await expect.poll(async () => (await state())[key], { timeout: 5000 }).toBe(value);
+  }
+  assert.equal((await state()).alive, true);
+}
+
 async function startReceiver(root) {
   const command = process.env.CI
     ? "python"
@@ -112,6 +167,7 @@ async function startReceiver(root) {
       await window.evaluate(() => window.classroom.checkUpdates());
     }
     assert.equal(state.mode, "desktop");
+    await checkTitleBar(app, window);
     assert.equal(state.files.length, 0);
     assert.equal(state.dataDir, profile);
     assert.equal(
@@ -312,8 +368,9 @@ async function startReceiver(root) {
       assert.equal(state.update.state, "local");
       console.log("Local installer acceptance passed: explicit local version, updates disabled, retained queue and settings.");
     }
+    await checkNativeWindowActions(app);
     console.log(
-      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: local UI protocol, sandbox, encrypted credentials, recording copy/receipt/restart, arbitrary chat file picker and pasted image IPC, source removal, attachment-only persisted turn, authenticated history image download.`,
+      `${packaged ? "Packaged EXE" : "Electron development"} acceptance passed: integrated native title bar and caption commands, close-to-tray, local UI protocol, sandbox, encrypted credentials, recording copy/receipt/restart, arbitrary chat file picker and pasted image IPC, source removal, attachment-only persisted turn, authenticated history image download.`,
     );
   } finally {
     if (app) {

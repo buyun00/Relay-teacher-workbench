@@ -26,6 +26,8 @@ flowchart LR
 4. 提交具体改动并 `git push origin main`。本地 `git commit` 本身不会启动 GitHub 构建。
 5. 查看 [Actions](https://github.com/buyun00/Relay-teacher-workbench/actions/workflows/classroom-client.yml) 的测试、打包和发布结果。全部通过后，其他电脑使用 [Releases](https://github.com/buyun00/Relay-teacher-workbench/releases/latest) 或正式客户端自动更新。
 
+桌面标题栏由 React 的 `WindowTitleBar` 与页面共用莫兰迪背景。Electron 设置 `titleBarStyle: hidden`，通过透明 `titleBarOverlay` 保留 Windows 的最小化、最大化/还原、关闭按钮；标题内容使用 Window Controls Overlay 的 CSS 安全区域，避免遮挡窗口按钮。浏览器预览仅显示按钮外观，实际窗口操作在 Electron 中验收。关闭窗口沿用收进托盘的行为，后台上传继续；真正退出仍使用托盘菜单。实现依据为 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。
+
 ## 本地安装包与正式发布包
 
 | 用途 | 构建命令（在 uploader） | 输出目录 | 版本与升级 |

@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Archive, ArchiveRestore, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen, GraduationCap,
+  Archive, ArchiveRestore, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
   LoaderCircle, MessageSquare, Mic, Pause, Play, Plus, Settings2,
   UploadCloud, X,
 } from "lucide-react";
 import { bridge } from "./bridge";
 import type { Recording, RecordingResults, Snapshot } from "./types";
 import { Chat } from "./Chat";
+import { WindowTitleBar } from "./WindowTitleBar";
 
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 const size = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(1) + " KB";
@@ -91,12 +92,13 @@ export function App() {
       });
     } finally { setAdding(false); }
   };
-  if (!s) return <div className="startup">{fatal || "正在打开…"}</div>;
+  if (!s) return <div className="desktop-layout"><WindowTitleBar /><div className="startup">{fatal || "正在打开…"}</div></div>;
   const pending = s.files.filter((file) => file.state !== "received").length;
   return (
+    <div className="desktop-layout">
+    <WindowTitleBar />
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="app-name"><span className="app-mark"><GraduationCap size={21} strokeWidth={1.7} /></span>课堂连接</div>
         <button className="new-task" disabled={creating} onClick={newTask}>{creating ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}新建任务</button>
         <div className="task-label">{showArchived ? "已归档" : "对话"}<span>{visibleTasks.length || ""}</span></div>
         <nav className="task-list" aria-label="任务列表">
@@ -141,6 +143,7 @@ export function App() {
         {toast.error ? <CircleAlert size={17} /> : <Check size={17} />}
         <span>{toast.message}</span><button aria-label="关闭提示" onClick={() => setToast(null)}><X size={15} /></button>
       </div>}
+    </div>
     </div>
   );
 }

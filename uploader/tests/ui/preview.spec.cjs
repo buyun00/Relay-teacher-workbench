@@ -1,5 +1,31 @@
 const { test, expect } = require("@playwright/test");
 
+test("integrated title bar and workspace fit normal and minimum window sizes", async ({ page }) => {
+  await page.goto("http://127.0.0.1:5178");
+  for (const size of [{ width: 1280, height: 860 }, { width: 980, height: 680 }]) {
+    await page.setViewportSize(size);
+    const header = page.getByRole("banner", { name: "窗口标题栏" });
+    await expect(header).toContainText("课堂连接");
+    await expect(page.locator(".sidebar .app-name")).toHaveCount(0);
+    const title = await header.boundingBox(), workspace = await page.locator(".app-shell").boundingBox();
+    expect(title.y).toBe(0);
+    expect(title.width).toBe(size.width);
+    expect(workspace.y).toBeCloseTo(title.height);
+    expect(workspace.y + workspace.height).toBeCloseTo(size.height);
+    const hero = await page.locator(".conversation-empty").boundingBox();
+    const area = await page.locator(".conversation").boundingBox();
+    expect(Math.abs(hero.x + hero.width / 2 - area.x - area.width / 2)).toBeLessThan(2);
+    await expect(page.getByLabel("消息草稿")).toBeVisible();
+    await expect(page.getByRole("button", { name: "设置", exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "新建任务", exact: true }).click();
+  await page.getByRole("combobox", { name: "对话模型" }).click();
+  await expect(page.getByRole("listbox", { name: "选择对话模型" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "录音上传", exact: true }).click();
+  await expect(page.getByRole("button", { name: "手动上传", exact: true })).toBeVisible();
+});
+
 test("multi-file messages preview and remove images, preserve attachments across tasks, and send attachments without text", async ({ page }) => {
   await page.goto("http://127.0.0.1:5178");
   await page.getByRole("button", { name: "新建任务", exact: true }).click();

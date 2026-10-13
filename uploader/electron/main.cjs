@@ -68,7 +68,13 @@ function createWindow() {
     minWidth: 980,
     minHeight: 680,
     title: "课堂连接",
-    backgroundColor: "#f7f8f5",
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#00000000",
+      symbolColor: "#405548",
+      height: 56,
+    },
+    backgroundColor: "#e9ede7",
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

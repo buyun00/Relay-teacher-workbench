@@ -193,3 +193,13 @@ Windows 和现有 Linux 宿主均通过 26 项虚构资料测试。原生 Hermes
 H3 独立虚构验收 profile 的真实原生对话中，GPT-6 Sol 通过 `read_file` 读到文本中的 7319，并识别图片中的 9264、蓝色圆形和橙色正方形。默认 DeepSeek Flash 通过原生 `vision_analyze` 成功读取同一图片。两条消息均完成，原生 SessionDB 的会话尾为 assistant，每条消息各关联两份已保存附件；客户端重启后原会话身份和附件保留。这不是新的真实课堂或 ASR 验收。
 
 生产教师插件升级到 0.1.5，部署前自己管理的接收端没有运行中的对话或录音任务；业务备份为 `backup_81168aef486943ac`。仅重启 `teacher-recordings.service`，SQLite 完整性及外键检查通过；既有 1 份录音、1 个作业、1 份转写、2 份报告保留，课堂录音状态仍为 analyzed/complete。
+
+## 2026-10-13 一体标题栏
+
+隐藏独立系统标题栏，将图标与“课堂连接”移至全宽顶部，和原有莫兰迪玻璃页面共用背景。透明 Window Controls Overlay 保留 Windows 窗口按钮，正文使用安全区域避免遮挡。加载及资料读取失败画面也保留顶部栏。
+
+TypeScript/Vite 构建、37 项 Node 测试及 9 项浏览器测试通过；新增界面检查覆盖 1280×860 和 980×680 下的标题位置、可用高度、居中欢迎内容、消息框、模型菜单和手动上传入口。开发 Electron 和本地打包 EXE 都通过隔离资料目录的原有录音/附件回归。打包 EXE 的 Windows 标题栏消息实测包括双击最大化/还原、最小化/恢复、最大化/还原以及关闭后隐藏且进程存活；原生覆盖层、安全区域和拖动 CSS 在实际 Electron 中读取验证。
+
+在本机 175% 缩放下查看了普通及最小窗口尺寸的真实打包窗口截图，顶部没有独立系统标题，窗口按钮显示在共同背景内。截图及虚构测试资料保存在仓库外 `C:\Users\win11\AppData\Local\HermesClassroomAcceptance\20261013-integrated-titlebar\`。
+
+本地安装包为 `uploader/release-local/Hermes-Classroom-Local-0.1.0-local.20261013T031006Z-x64-Setup.exe`，119157204 字节，SHA-256 `cc506cbb39f1360e8dc4c26693ac6735a9d839b025df79cd608a08d8ad60684c`。实际启动打包程序验证了本地版本标签、GitHub 更新禁用、加密设置及队列保留。安装向导覆盖安装和人工鼠标拖动尚未执行；本次不新增真实课堂、ASR 或服务器部署验收。
