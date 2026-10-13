@@ -135,6 +135,11 @@ function handlers() {
     }
     return image.toDataURL();
   });
+  handle("chat-open-file", async (input) => {
+    const file = await client.chatFiles.ensure(input);
+    const error = await shell.openPath(file.path);
+    if (error) throw new Error("无法打开附件：" + error);
+  });
   handle("chat-save-file", async (input) => {
     const file = await client.chatFiles.ensure(input);
     const result = await dialog.showSaveDialog(window, { title: "保存附件", defaultPath: file.filename });

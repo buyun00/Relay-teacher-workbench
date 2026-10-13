@@ -362,6 +362,15 @@ async function startReceiver(root) {
     await fsp.unlink(path.join(profile, "chat-attachments", image.id, image.filename));
     app = await launch(); window = await app.firstWindow();
     await window.waitForFunction(() => !!window.classroom && !!document.querySelector(".app-shell"));
+    // Exercise preload + IPC + history download without launching an external application.
+    await app.evaluate(({ shell }) => {
+      globalThis.openedAttachmentPaths = [];
+      shell.openPath = async filename => { globalThis.openedAttachmentPaths.push(filename); return ""; };
+    });
+    await window.evaluate(input => window.classroom.openChatAttachment(input), { id: chatId, attachmentId: image.id });
+    assert.deepEqual(await app.evaluate(() => globalThis.openedAttachmentPaths), [path.join(profile, "chat-attachments", image.id, image.filename)]);
+    await app.evaluate(({ shell }) => { shell.openPath = async () => "FICTIONAL_NO_ASSOCIATION"; });
+    await assert.rejects(() => window.evaluate(input => window.classroom.openChatAttachment(input), { id: chatId, attachmentId: image.id }), /无法打开附件.*FICTIONAL_NO_ASSOCIATION/);
     assert.ok(await window.evaluate(input => window.classroom.previewChatAttachment(input), { id: chatId, attachmentId: image.id }));
     assert.deepEqual(await fsp.readFile(path.join(profile, "chat-attachments", image.id, image.filename)), Buffer.from(pastedPNG, "base64"));
     if (localBuild) {

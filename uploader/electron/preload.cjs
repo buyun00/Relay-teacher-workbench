@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("classroom", {
   removeChatAttachment: (input) => ipcRenderer.invoke("client:chat-remove-file", input),
   previewChatAttachment: (input) => ipcRenderer.invoke("client:chat-preview-file", input),
   saveChatAttachment: (input) => ipcRenderer.invoke("client:chat-save-file", input),
+  openChatAttachment: (input) => ipcRenderer.invoke("client:chat-open-file", input),
   sendChat: (input) => ipcRenderer.invoke("client:chat-send", input),
   selectChatModel: (input) => ipcRenderer.invoke("client:chat-model", input),
   cancelChat: (id) => ipcRenderer.invoke("client:chat-cancel", id),

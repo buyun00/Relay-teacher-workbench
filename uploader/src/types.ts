@@ -147,6 +147,7 @@ export interface ClientAPI {
   removeChatAttachment(input: { id: string; attachmentId: string }): Promise<unknown>;
   previewChatAttachment(input: { id: string; attachmentId: string; full?: boolean }): Promise<string | null>;
   saveChatAttachment(input: { id: string; attachmentId: string }): Promise<unknown>;
+  openChatAttachment(input: { id: string; attachmentId: string }): Promise<unknown>;
   sendChat(input: { id: string; content: string; attachments?: string[] }): Promise<unknown>;
   selectChatModel(input: { id: string; modelId: string }): Promise<ChatView>;
   cancelChat(id: string): Promise<unknown>;

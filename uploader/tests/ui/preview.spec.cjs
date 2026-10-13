@@ -9,6 +9,7 @@ test("generated files appear inside the assistant reply and save from that same 
       { id: 'fictional-result-video', filename: 'fictional-generated.mp4', mime: 'video/mp4', bytes: 7319 },
     ];
     window.fictionalSaves = [];
+    window.fictionalOpens = [];
     const snapshot = { mode: 'preview', version: '0.1.0', tasks: [task], chatModels: [], deviceState: 'ready',
       config: { endpoint: '', workspaceId: 'fictional-delivery', devices: [], pauseUploads: false, hasToken: false },
       dataDir: 'FICTIONAL DATA ONLY', devices: [], candidates: [], files: [], copying: null, scanning: false,
@@ -21,6 +22,7 @@ test("generated files appear inside the assistant reply and save from that same 
       snapshot: async () => snapshot, subscribe: () => () => {}, readChat: async () => view, subscribeChat: () => () => {},
       previewChatAttachment: async () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aB8sAAAAASUVORK5CYII=',
       saveChatAttachment: async input => { window.fictionalSaves.push(input); },
+      openChatAttachment: async input => { window.fictionalOpens.push(input); },
     };
   });
   await page.goto('http://127.0.0.1:5178');
@@ -31,6 +33,11 @@ test("generated files appear inside the assistant reply and save from that same 
   await results.getByRole('button', { name: '预览图片：fictional-generated.png' }).click();
   await expect(page.getByRole('dialog', { name: '图片预览：fictional-generated.png' })).toBeVisible();
   await page.getByRole('button', { name: '关闭图片预览' }).click();
+  await results.getByRole('button', { name: '打开附件：fictional-generated.mp4', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.fictionalOpens)).toEqual([
+    { id: 'fictional-result-chat', attachmentId: 'fictional-result-video' },
+  ]);
+  await expect.poll(() => page.evaluate(() => window.fictionalSaves)).toEqual([]);
   await results.getByRole('button', { name: '保存附件：fictional-generated.mp4' }).click();
   await expect.poll(() => page.evaluate(() => window.fictionalSaves)).toEqual([
     { id: 'fictional-result-chat', attachmentId: 'fictional-result-video' },
@@ -122,7 +129,7 @@ test("two-pane conversation streams, routes after early turns, shows steps, and 
   await page.getByRole("button", { name: "新建任务", exact: true }).click();
   await page.getByRole("textbox", { name: "消息草稿" }).fill("虚构任务：整理课堂录音");
   await expect(page.getByRole("navigation", { name: "任务列表" })).toContainText("虚构任务：整理课堂录音");
-  await expect(page.getByText("草稿已保存在本机")).toBeVisible();
+  await expect(page.getByText(/草稿已保存在本机|正在保存草稿/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发送消息" })).toBeEnabled();
   await page.getByRole("button", { name: "发送消息" }).click();
   await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();

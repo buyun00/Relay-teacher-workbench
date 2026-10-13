@@ -37,6 +37,12 @@ function Attachment({ chatId, file, removable, disabled, run, preview }: {
   chatId: string; file: ChatAttachment; removable: boolean; disabled: boolean; run: Run; preview: () => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const open = () => {
+    if (opening) return;
+    setOpening(true);
+    void run(() => bridge.openChatAttachment({ id: chatId, attachmentId: file.id })).finally(() => setOpening(false));
+  };
   const image = file.mime.startsWith("image/");
   useEffect(() => {
     if (!image) return;
@@ -48,8 +54,8 @@ function Attachment({ chatId, file, removable, disabled, run, preview }: {
   return <div className={"chat-attachment " + (image ? "is-image " : "") + (file.status === "error" ? "has-error" : "")} title={file.error || file.filename}>
     {image ? <button className="attachment-image" aria-label={"预览图片：" + file.filename} onClick={preview}>
       {src ? <img src={src} alt={file.filename} /> : <Image size={24} />}
-    </button> : <span className="attachment-file-icon"><File size={23} /></span>}
-    <div className="attachment-info"><span>{file.filename}</span><small>{file.status === "uploading" && <LoaderCircle size={10} className="spin" />}{progress}</small></div>
+    </button> : <button className="attachment-file-icon" disabled={disabled || opening} aria-label={"打开附件图标：" + file.filename} onClick={open}><File size={23} /></button>}
+    <button className="attachment-info" disabled={disabled || opening} aria-label={"打开附件：" + file.filename} onClick={open}><span>{file.filename}</span><small>{opening ? <><LoaderCircle size={10} className="spin" />正在打开…</> : <>{file.status === "uploading" && <LoaderCircle size={10} className="spin" />}{progress}</>}</small></button>
     {removable ? <button className="attachment-action" disabled={disabled} aria-label={"移除附件：" + file.filename}
       onClick={() => void run(() => bridge.removeChatAttachment({ id: chatId, attachmentId: file.id }))}><X size={12} /></button>
       : <button className="attachment-action" aria-label={"保存附件：" + file.filename} onClick={() => void run(() => bridge.saveChatAttachment({ id: chatId, attachmentId: file.id }))}><Download size={12} /></button>}

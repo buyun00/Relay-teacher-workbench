@@ -221,6 +221,9 @@ function browserPreview(): ClientAPI {
       if (!attachment?.meta.mime.startsWith("image/")) return null;
       attachment.url ||= URL.createObjectURL(attachment.file); return attachment.url;
     },
+    async openChatAttachment() {
+      throw new Error("请在桌面客户端直接打开附件，浏览器演示中可保存附件");
+    },
     async saveChatAttachment({ attachmentId }) {
       const attachment = attachments.get(attachmentId);
       if (!attachment) throw new Error("附件不存在");

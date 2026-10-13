@@ -158,7 +158,6 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
             </button>}
         </div>
       </div>
-      {task && (draft || attachments.length > 0) && <span className="draft-note">{task.draft === draft ? "草稿已保存在本机" : "正在保存草稿…"}</span>}
     </div>
     {dragging && task && !archived && <div className="attachment-drop-hint"><Paperclip size={24} />松开即可添加到这条消息</div>}
   </div>;

@@ -55,6 +55,11 @@
 .attachment-file-icon { display: grid; place-items: center; width: 35px; height: 35px; flex-shrink: 0; color: #728b7a; border-radius: 11px; background: #dce7daa6; }
 .attachment-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
 .attachment-info > span { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.attachment-info small { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #63725c; }
+.attachment-file-icon, .attachment-info { border: 0; cursor: pointer; font: inherit; text-align: left; }
+.attachment-info { background: transparent; color: inherit; padding: 0; }
+.attachment-info > span { max-width: 100%; }
+.attachment-file-icon:disabled, .attachment-info:disabled { cursor: default; }
+.attachment-file-icon:focus-visible, .attachment-info:focus-visible { outline: 2px solid #728b7a; outline-offset: 3px; }
 .is-image .attachment-info { padding: 2px 21px 2px 3px; }
 .attachment-action { display: grid; place-items: center; position: absolute; top: 7px; right: 6px; width: 21px; height: 21px; padding: 0; border: 1px solid #ffffffe8; border-radius: 8px; background: #f8fbf5df; color: #58705e; cursor: pointer; }.is-image .attachment-action { top: 8px; right: 8px; }
 .attachment-action:hover { background: #dae6d9; }.attachment-action:disabled { cursor: default; opacity: .5; }
