@@ -107,9 +107,12 @@ const { QueueDatabase } = require("../electron/core/database.cjs");
     }, relaunchMarker);
     const closed = app.waitForEvent("close", { timeout: 15000 });
     await banner.getByRole("button", { name: "重启并更新" }).click();
-    await Promise.race([closed, page.getByRole("alert").waitFor({ state: "visible", timeout: 15000 }).then(async () => {
-      throw new Error("Update restart was rejected: " + await page.getByRole("alert").textContent());
-    })]);
+    try { await closed; }
+    catch (error) {
+      if (!page.isClosed() && await page.getByRole("alert").isVisible())
+        throw new Error("Update restart was rejected: " + await page.getByRole("alert").textContent());
+      throw error;
+    }
     app = null;
     const relaunch = JSON.parse(await fsp.readFile(relaunchMarker, "utf8"));
     assert.equal(relaunch.requested, true);
