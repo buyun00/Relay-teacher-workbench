@@ -102,11 +102,15 @@ const { QueueDatabase } = require("../electron/core/database.cjs");
     // so the harness can own the next process instead of leaving an unattached EXE running after the test.
     const relaunchMarker = path.join(root, "fictional-relaunch.json");
     await app.evaluate(({ app }, markerPath) => {
-      app.relaunch = () => require("node:fs").writeFileSync(markerPath, JSON.stringify({ requested: true, argv: process.argv }));
+      const filesystem = process.getBuiltinModule("fs");
+      app.relaunch = () => filesystem.writeFileSync(markerPath, JSON.stringify({ requested: true, argv: process.argv }));
     }, relaunchMarker);
     const closed = app.waitForEvent("close", { timeout: 15000 });
     await banner.getByRole("button", { name: "重启并更新" }).click();
-    await closed; app = null;
+    await Promise.race([closed, page.getByRole("alert").waitFor({ state: "visible", timeout: 15000 }).then(async () => {
+      throw new Error("Update restart was rejected: " + await page.getByRole("alert").textContent());
+    })]);
+    app = null;
     const relaunch = JSON.parse(await fsp.readFile(relaunchMarker, "utf8"));
     assert.equal(relaunch.requested, true);
     assert.ok(relaunch.argv.includes("--user-data-dir=" + profile));
