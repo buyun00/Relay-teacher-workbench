@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Archive, ArchiveRestore, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
+  Archive, ArchiveRestore, ArrowRight, Check, ChevronDown, CircleAlert, FileAudio2, FolderOpen,
   LoaderCircle, MessageSquare, Mic, Pause, Play, Plus, Settings2,
   UploadCloud, X,
 } from "lucide-react";
@@ -110,15 +110,20 @@ export function App() {
             </div>
           )) : <p className="no-tasks">{showArchived ? "还没有归档的对话" : "还没有对话，从一个想法开始"}</p>}
         </nav>
+        <button className={"recording-feature-card " + (page === "uploads" || page === "review" ? "selected" : "")} aria-label="录音上传"
+          aria-current={page === "uploads" || page === "review" ? "page" : undefined} onClick={() => setPage("uploads")}>
+          <span className="recording-feature-top">
+            <span className="recording-feature-icon"><FileAudio2 size={23} /></span>
+            {pending > 0 && <span className="recording-feature-badge">{pending} 份待处理</span>}
+          </span>
+          <span className="recording-feature-title">录音整理<ArrowRight size={17} /></span>
+          <span className="recording-feature-description">上传、整理与入库</span>
+        </button>
         <div className="sidebar-footer">
           <button className={"sidebar-link archive-toggle " + (showArchived ? "selected" : "")} aria-label={showArchived ? "返回对话" : "已归档对话"}
             onClick={() => { setShowArchived(!showArchived); setTaskId(null); setPage("chat"); }}>
             {showArchived ? <MessageSquare size={17} /> : <Archive size={17} />}<span>{showArchived ? "返回对话" : "已归档"}</span>
             {!showArchived && s.tasks.some((item) => item.archived_at) && <b>{s.tasks.filter((item) => item.archived_at).length}</b>}
-          </button>
-          <button className={"sidebar-link " + (page === "uploads" ? "selected" : "")} aria-label="录音上传"
-            onClick={() => setPage("uploads")}>
-            <FileAudio2 size={17} /><span>录音整理</span>{pending > 0 && <b aria-hidden="true">{pending}</b>}
           </button>
           <button className={"sidebar-link " + (page === "history" ? "selected" : "")} onClick={() => setPage("history")}><Archive size={17}/><span>课程历史</span></button>
           <button className={"sidebar-link " + (page === "schedule" ? "selected" : "")} onClick={() => setPage("schedule")}><Settings2 size={17}/><span>课表</span></button>

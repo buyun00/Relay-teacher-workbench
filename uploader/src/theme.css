@@ -94,6 +94,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .task-action:focus-visible { opacity: 1; }
 .task-action:hover { background: #ffffff87; color: #4d6858; }
 .no-tasks { color: #667260; line-height: 1.8; }
+.recording-feature-card {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; width: 100%; padding: 15px;
+  margin: 2px 0 16px; text-align: left; border-radius: 20px; color: #405b49;
+  background: linear-gradient(135deg, #edf4e8ed, #c6d8c9c9); border: 1px solid #ffffffd9;
+  box-shadow: 0 6px 20px #647e6512, inset 0 1px 0 #fff;
+  transition: background .15s, box-shadow .15s;
+}
+.recording-feature-card:hover { background: linear-gradient(135deg, #f3f8ee, #bdd4c3e6); box-shadow: 0 8px 24px #647e6522, inset 0 1px 0 #fff; }
+.recording-feature-card.selected { border-color: #96b49b; background: linear-gradient(135deg, #e7f0df, #bdd3c3d9); }
+.recording-feature-card:focus-visible { outline: 2px solid #6e8b77; outline-offset: 3px; }
+.recording-feature-top, .recording-feature-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recording-feature-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 13px; background: #ffffff94; color: #64836e; }
+.recording-feature-badge { font-size: 11px; font-weight: 500; padding: 4px 7px; border-radius: 9px; background: #ffffff8c; color: #56715e; }
+.recording-feature-title { margin-top: 3px; font-size: 16px; font-weight: 600; }
+.recording-feature-title svg { color: #6a8672; }
+.recording-feature-description { font-size: 11px; line-height: 1.5; color: #68816b; }
 .sidebar-footer { border-color: #9da99726; padding-top: 10px; }
 .sidebar-link { border-radius: 16px; padding: 11px 13px; color: #51654f; }
 .sidebar-link svg { color: #839181; }
