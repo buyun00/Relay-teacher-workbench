@@ -8,6 +8,7 @@ const { once } = require("node:events");
 const { _electron: electron, expect } = require("@playwright/test");
 const { buildContent } = require("../scripts/build-content.cjs");
 const { sha256, MANIFEST_NAME } = require("../electron/shell/manifest.cjs");
+const { QueueDatabase } = require("../electron/core/database.cjs");
 
 (async () => {
   const executable = process.env.CLASSROOM_PACKAGED_EXE;
@@ -22,6 +23,9 @@ const { sha256, MANIFEST_NAME } = require("../electron/shell/manifest.cjs");
   const version = initial.version.split(".").map(Number); version[2]++;
   const nextVersion = version.join(".");
   const repository = "fictional-owner/fictional-content-exe";
+  const database = new QueueDatabase(profile);
+  database.setSetting("releaseRepo", repository);
+  database.db.close();
   const marker = "EXPLICITLY-FICTIONAL-CONTENT-UPDATE";
   await fsp.appendFile(path.join(nextSource, "electron/preload.cjs"), `\nrequire("electron").contextBridge.exposeInMainWorld("fictionalContentVersion", ${JSON.stringify(marker)});\n`);
   const clientFile = path.join(nextSource, "electron/core/client.cjs");
@@ -79,8 +83,14 @@ const { sha256, MANIFEST_NAME } = require("../electron/shell/manifest.cjs");
     await page.evaluate(() => window.classroom.selectFiles());
     const before = await page.evaluate(() => window.classroom.snapshot());
     assert.equal(before.files.length, 1);
-    await page.evaluate(repo => window.classroom.saveSettings({ releaseRepo: repo }), repository);
+    // The startup scheduler must discover this release with no settings or manual check action.
     await expect.poll(() => page.evaluate(() => window.classroom.snapshot()).then(state => state.update.state), { timeout: 20000 }).toBe("downloaded");
+    const banner = page.getByRole("region", { name: "客户端更新" });
+    await expect(banner).toContainText(`新版本 ${nextVersion} 已下载`);
+    await expect(banner.getByRole("button", { name: "重启并更新" })).toBeEnabled();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "录音上传", exact: true }).click();
+    await expect(banner.getByRole("button", { name: "重启并更新" })).toBeVisible();
     const downloaded = await page.evaluate(() => window.classroom.snapshot());
     assert.equal(downloaded.version, initial.version);
     const changed = manifest.files.filter(file => !initial.files.some(old => old.sha256 === file.sha256));
@@ -88,8 +98,18 @@ const { sha256, MANIFEST_NAME } = require("../electron/shell/manifest.cjs");
     assert.deepEqual(requests.sort(), changed.map(file => file.asset).sort());
     assert.equal(downloaded.update.downloadedBytes, changed.reduce((sum, file) => sum + file.downloadSize, 0));
     assert.equal(fullDownloads.length, 0);
-    // No install action: an ordinary quit and launch must automatically select the complete new snapshot.
-    await quit();
+    // Exercise the visible restart button through real IPC and shutdown. Capture Electron's relaunch request
+    // so the harness can own the next process instead of leaving an unattached EXE running after the test.
+    const relaunchMarker = path.join(root, "fictional-relaunch.json");
+    await app.evaluate(({ app }, markerPath) => {
+      app.relaunch = () => require("node:fs").writeFileSync(markerPath, JSON.stringify({ requested: true, argv: process.argv }));
+    }, relaunchMarker);
+    const closed = app.waitForEvent("close", { timeout: 15000 });
+    await banner.getByRole("button", { name: "重启并更新" }).click();
+    await closed; app = null;
+    const relaunch = JSON.parse(await fsp.readFile(relaunchMarker, "utf8"));
+    assert.equal(relaunch.requested, true);
+    assert.ok(relaunch.argv.includes("--user-data-dir=" + profile));
     app = await launch(); page = await pageFor(app);
     const after = await page.evaluate(() => window.classroom.snapshot());
     assert.equal(after.version, nextVersion);
@@ -109,7 +129,8 @@ const { sha256, MANIFEST_NAME } = require("../electron/shell/manifest.cjs");
     console.log(JSON.stringify({ acceptance: "packaged-content-update", from: initial.version, to: nextVersion,
       changed_files: changed.length, reused_files: manifest.files.length - changed.length, downloaded_bytes: downloaded.update.downloadedBytes,
       installer_requests: fullDownloads.length, executable_unchanged: true, retained: ["queue", "draft", "settings"],
-      new_code_loaded: ["main services", "preload", "renderer"], fictional_data_only: true }));
+      new_code_loaded: ["main services", "preload", "renderer"], automatic_detection: true, global_update_banner: true,
+      restart_button_ipc: true, relaunch_requested: true, fictional_data_only: true }));
   } finally {
     if (app) { await app.evaluate(({ app }) => app.quit()).catch(() => {}); await app.close().catch(() => {}); }
     await new Promise(resolve => server.close(resolve));

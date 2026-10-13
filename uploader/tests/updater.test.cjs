@@ -21,6 +21,112 @@ function fixture(options = {}) {
   return { store, client, updates, restarted: () => restarted, checks: () => checks };
 }
 
+function fakeClock() {
+  let now = 0, sequence = 0;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { callback, at: now + delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    async advance(milliseconds) {
+      now += milliseconds;
+      for (const [id, timer] of [...timers]) if (timer.at <= now) {
+        timers.delete(id); timer.callback();
+      }
+      await new Promise(resolve => setImmediate(resolve));
+    },
+    pending: () => timers.size,
+  };
+}
+
+test("startup and periodic checks discover and download updates without settings or manual actions", async () => {
+  const clock = fakeClock();
+  const { client, updates, checks, restarted } = fixture({ clock });
+  updates.start(); updates.start();
+  assert.equal(clock.pending(), 1);
+  await clock.advance(9999); assert.equal(checks(), 0);
+  await clock.advance(1); assert.equal(checks(), 1);
+  assert.equal(client.update.state, "downloaded");
+  assert.equal(client.update.readyVersion, "0.1.2");
+  assert.equal(restarted(), 0);
+  await clock.advance(30 * 60 * 1000); assert.equal(checks(), 2);
+  updates.stop();
+  await clock.advance(30 * 60 * 1000); assert.equal(checks(), 2);
+  assert.equal(clock.pending(), 0);
+});
+
+test("automatic network failures retry after five minutes and recover without visiting settings", async () => {
+  const clock = fakeClock();
+  const { store, client, updates, checks } = fixture({ clock });
+  const latest = store.latest;
+  let offline = true;
+  store.latest = async (...args) => {
+    if (offline) throw new Error("FICTIONAL disconnected network");
+    return latest(...args);
+  };
+  updates.start();
+  await clock.advance(10000);
+  assert.equal(client.update.state, "error");
+  offline = false;
+  await clock.advance(5 * 60 * 1000 - 1); assert.equal(checks(), 0);
+  await clock.advance(1); assert.equal(checks(), 1);
+  assert.equal(client.update.state, "downloaded");
+  updates.stop();
+});
+
+test("window focus checks are throttled, while wake and manual retry check immediately", async () => {
+  const clock = fakeClock();
+  const { updates, checks } = fixture({ clock });
+  updates.start();
+  await clock.advance(10000); assert.equal(checks(), 1);
+  await updates.checkAutomatic(); await updates.checkAutomatic(); assert.equal(checks(), 1);
+  await clock.advance(60000);
+  await Promise.all([updates.checkAutomatic(), updates.checkAutomatic()]); assert.equal(checks(), 2);
+  await updates.checkAutomatic(true); assert.equal(checks(), 3);
+  await updates.check(); assert.equal(checks(), 4);
+  updates.stop();
+});
+
+test("local and development clients never schedule automatic network checks", async () => {
+  for (const options of [{ channel: "local" }, { packaged: false }]) {
+    const clock = fakeClock();
+    const { updates, checks } = fixture({ ...options, clock });
+    updates.start(); await updates.checkAutomatic(true);
+    await clock.advance(30 * 60 * 1000);
+    assert.equal(clock.pending(), 0); assert.equal(checks(), 0);
+  }
+});
+
+test("available version is published before downloading and a ready version remains actionable after a failed recheck", async () => {
+  const { store, client, updates, restarted } = fixture();
+  const states = [];
+  client.changed = () => states.push({ ...client.update });
+  await updates.check();
+  assert.ok(states.some(state => state.state === "available" && state.version === "0.1.2"));
+  store.latest = async () => { throw new Error("FICTIONAL offline during recheck"); };
+  await updates.check();
+  assert.ok(states.some(state => state.state === "checking" && state.readyVersion === "0.1.2"));
+  assert.equal(client.update.state, "error");
+  assert.equal(client.update.readyVersion, "0.1.2");
+  await updates.apply(); assert.equal(restarted(), 1);
+});
+
+test("quitting cancels an active download and does not schedule another automatic attempt", async () => {
+  const clock = fakeClock();
+  const { store, updates, checks } = fixture({ clock });
+  let entered;
+  const downloading = new Promise(resolve => { entered = resolve; });
+  store.prepare = async (_manifest, { signal }) => {
+    entered();
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("FICTIONAL quit")), { once: true }));
+  };
+  updates.start();
+  const attempt = updates.check(); await downloading;
+  updates.stop(); await attempt;
+  await clock.advance(30 * 60 * 1000);
+  assert.equal(clock.pending(), 0); assert.equal(checks(), 1);
+});
+
 test("new content downloads automatically and becomes pending without invoking any installer or restarting on download", async () => {
   const { store, client, updates, restarted } = fixture();
   await updates.check();

@@ -15,14 +15,14 @@ flowchart LR
     E --> F[草稿 Release 上传全部文件]
     F --> G[校验成功后公开 Release]
     G --> H[客户端检查并自动下载]
-    H --> I[用户点击安装并重启]
+    H --> I[标题栏下点击重启并更新]
 ```
 
 ## 日常开发
 
 1. 在 `uploader` 运行 `npm run dev`，浏览器迭代；需要实际文件能力时用 `npm run desktop`。
 2. 修改后运行相关测试；完整检查为根目录 Python 测试和 `uploader` 的 `npm run check`。
-3. 每次交付客户端改动，运行 `npm run pack:local`，提供 `uploader/release-local/` 中的新 EXE。从本机直接安装，不等待 GitHub 构建或下载安装包。
+3. 客户端交付使用 GitHub Actions 的 `npm run pack:win` 生成官方安装包和更新内容；仅在明确要求本地安装包时运行 `npm run pack:local`。
 4. 提交具体改动并 `git push origin main`。本地 `git commit` 本身不会启动 GitHub 构建。
 5. 查看 [Actions](https://github.com/buyun00/Relay-teacher-workbench/actions/workflows/classroom-client.yml) 的测试、打包和发布结果。全部通过后，其他电脑使用 [Releases](https://github.com/buyun00/Relay-teacher-workbench/releases/latest) 或正式客户端自动更新。
 
@@ -57,7 +57,7 @@ PR 只能构建/测试。手动 workflow 默认不发布；选择 main 并勾选
 
 开发电脑需要一次能推送仓库及 workflow 的 GitHub 登录。本机现有 Git Credential Manager 登录已验证有写入和管理权限；命令行 API 操作可在内存中复用，不记录 Token。换电脑时可使用 `gh auth login --hostname github.com --git-protocol https --web`，由浏览器完成登录，不在聊天中提供密码或 Token。
 
-正式安装版启动时及每 6 小时检查 GitHub；自动拉取变化的业务内容，完成后提示用户。本地安装包关闭这条下载链路。持续两分钟没有进展会取消并显示可重试的网络提示。下一次启动自动启用新内容，也可点“重启启用新内容”；复制、扫描或对话执行期间暂缓立即重启。本地队列、草稿、音频副本、附件和加密连接配置保存在原资料目录，更新不迁移这些资料。
+正式安装版启动10秒后自动检查 GitHub，之后每30分钟复查；回到窗口时补查（1分钟内不重复），电脑唤醒或网络恢复时立即补查，网络失败5分钟后自动重试。发现新版后自动拉取变化的业务内容，标题栏正下方显示覆盖整个窗口宽度的更新提示和下载进度，对话与录音页面均可见，无须打开设置。下载完成点击“重启并更新”，下一次普通启动也会自动启用新内容；复制、扫描或任一对话执行期间暂缓立即重启。后台复查及复查断网不会隐藏已下载版本的重启入口。持续两分钟没有下载进展会取消，并在同一提示栏提供“重试更新”。本地安装包和开发预览关闭这条下载链路。本地队列、草稿、音频副本、附件和加密连接配置保存在原资料目录，更新不迁移这些资料。
 
 ## 内容更新协议与底座边界
 
@@ -79,7 +79,7 @@ PR 只能构建/测试。手动 workflow 默认不发布；选择 main 并勾选
 
 `npm run check` 验证构建、客户端不变量、内容下载/原子切换/回退/重试、发布资产和浏览器交互。`node tests/electron-smoke.cjs` 验证真实 Electron 桥、队列、凭据、附件和窗口。
 
-正式 EXE 构建后，设置 `CLASSROOM_PACKAGED_EXE` 指向 `release/win-unpacked/Hermes Classroom.exe`，运行 `node tests/content-update-smoke.cjs`。它在独立虚构 profile 中创建录音队列和草稿，模拟 GitHub Release 的完整响应，用真实更新器只下载变化内容，然后普通退出和启动同一个 EXE，核对新版服务、preload 和界面已加载，资料、暂停偏好和 EXE 字节保留；测试不访问真实 ASR 或教师服务。Actions 在发布前必须通过这条链路。模拟源的验证与真实 GitHub 公网下载速度、用户旧安装版的一次性迁移验收分别记录。
+正式 EXE 构建后，设置 `CLASSROOM_PACKAGED_EXE` 指向 `release/win-unpacked/Hermes Classroom.exe`，运行 `node tests/content-update-smoke.cjs`。它在独立虚构 profile 中创建录音队列和草稿，模拟 GitHub Release 的完整响应，等待启动自动检测和真实更新器下载变化内容，核对标题栏下的提示在对话和录音页面均可见，无须打开设置或手动检查；点击“重启并更新”，通过真实 IPC 完成后台关闭并核对 Electron 重启请求，再由测试接管下一次进程启动，核对新版服务、preload 和界面已加载，资料、暂停偏好和 EXE 字节保留。测试不访问真实 ASR 或教师服务。Actions 在发布前必须通过这条链路。模拟源的验证与真实 GitHub 公网下载速度、用户旧安装版的一次性迁移验收分别记录。
 
 最初本地 0.1.0 包的更新地址为空，在设置填 `buyun00/Relay-teacher-workbench` 即可接入；后续 CI 包自带该地址。Windows Authenticode 签名尚未配置；之后选择证书或签名服务时再接入相应的签名凭据。
 

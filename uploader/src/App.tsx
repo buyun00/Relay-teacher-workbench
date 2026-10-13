@@ -8,6 +8,7 @@ import { bridge } from "./bridge";
 import type { Recording, RecordingResults, Snapshot } from "./types";
 import { Chat } from "./Chat";
 import { WindowTitleBar } from "./WindowTitleBar";
+import { UpdateBanner } from "./UpdateBanner";
 
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 const size = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(1) + " KB";
@@ -47,6 +48,11 @@ export function App() {
     const timer = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    const online = () => { if (window.classroom) void bridge.checkUpdates().catch(() => {}); };
+    window.addEventListener("online", online);
+    return () => window.removeEventListener("online", online);
+  }, []);
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") { setSettings(false); setToast(null); }
@@ -97,6 +103,7 @@ export function App() {
   return (
     <div className="desktop-layout">
     <WindowTitleBar />
+    <UpdateBanner snapshot={s} run={run} />
     <div className="app-shell">
       <aside className="sidebar">
         <button className="new-task" disabled={creating} onClick={newTask}>{creating ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}新建任务</button>

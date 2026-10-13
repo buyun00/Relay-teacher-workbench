@@ -12,6 +12,7 @@ const {
   protocol,
   net,
   clipboard,
+  powerMonitor,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
@@ -97,6 +98,7 @@ function createWindow() {
       window.hide();
     }
   });
+  window.on("focus", () => void updates.checkAutomatic());
   if (devURL) window.loadURL(devURL);
   else window.loadURL("classroom://app/index.html");
 }
@@ -168,6 +170,7 @@ function handlers() {
         args: ["--hidden"],
       });
     updates.configure();
+    updates.start();
     void client.transport.health();
     void updates.check();
     return result;
@@ -250,16 +253,19 @@ async function start() {
     packaged: app.isPackaged,
     channel: buildChannel,
     notify(version) {
-      if (Notification.isSupported())
-        new Notification({
+      if (Notification.isSupported()) {
+        const notification = new Notification({
           title: "课堂连接有更新",
-          body: `${version} 的新内容已下载，下次启动自动启用。`,
-        }).show();
+          body: `${version} 已下载，打开窗口后可点击“重启并更新”。`,
+        });
+        notification.on("click", show);
+        notification.show();
+      }
     },
     restart: async () => {
       quitting = true;
       closing = true;
-      updates.cancel();
+      updates.stop();
       await client.close();
       app.relaunch();
       app.quit();
@@ -300,14 +306,12 @@ async function start() {
   await client.start();
   applicationReady = true;
   confirmRuntime();
-  if (app.isPackaged && buildChannel !== "local") {
-    setTimeout(() => void updates.check(), 10000);
-    setInterval(() => void updates.check(), 6 * 60 * 60 * 1000).unref();
-  }
+  updates.start();
+  powerMonitor.on("resume", () => void updates.checkAutomatic(true));
 }
 app.on("before-quit", (event) => {
   quitting = true;
-  updates?.cancel();
+  updates?.stop();
   if (client && !closing) {
     event.preventDefault();
     closing = true;

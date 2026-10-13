@@ -105,6 +105,7 @@ export interface Snapshot {
     state: string;
     detail: string;
     version?: string;
+    readyVersion?: string;
     progress?: number;
     downloadedBytes?: number;
     downloadTotal?: number;
