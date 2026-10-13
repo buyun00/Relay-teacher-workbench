@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import time
@@ -58,7 +59,11 @@ def install(router, source):
                 shutil.copy2(target, backup / name)
             temporary = target.with_name(name + '.task-routing-tmp')
             temporary.write_text(content, encoding='utf-8')
-            shutil.copymode(target if target.exists() else router / '__init__.py', temporary)
+            template = target if target.exists() else router / '__init__.py'
+            shutil.copymode(template, temporary)
+            if os.name == 'posix':
+                owner = template.stat()
+                os.chown(temporary, owner.st_uid, owner.st_gid)
             temporary.replace(target)
             written.append(name)
     except BaseException:

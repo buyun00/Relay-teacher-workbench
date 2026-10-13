@@ -81,6 +81,10 @@ python ops/install_task_routing.py --router /opt/data/plugins/smart-chat-router 
 
 ## 部署记录
 
-候选尚未切换线上。2026-10-13 16:46（Asia/Shanghai）接入前复查时，现有 Hermes 仍报告 1 个活动工作单元，安装检查未修改线上代码。原生计数包含聊天、定时和 API 等工作，当前接口未提供此单元的归属；没有据此中止任何现有任务。
+已于 2026-10-13 18:11（Asia/Shanghai）切换线上。此前 16:46 的检查报告 1 个活动工作单元；本轮实际切换前活动数已降为 0，因此没有中断或重跑旧任务。通过原生 `gateway.drain_control` 暂缓新轮次进入，完成切换后清除本次标记，恢复为 `running`；钉钉连接状态为 `connected`，Gateway PID 仍为 205。
+
+线上代码备份：`/opt/data/teacher-plugin-backups/task-routing-20261013T181056`。安装器由管理员执行，并保留三个代码文件原有的 UID/GID 10000；运行和热加载仍使用既有 Hermes 用户。没有调整备份目录的全局权限。
+
+原生 Plugin Doctor 通过，热加载回执确认 `pre_gateway_dispatch` 位于 `activated_now.gateway_transforms`，3 个平台适配器已重新连接插件处理器。随后直接加载线上已安装的源码，在独立虚构 profile 中通过真实 Hermes 消息对象和钉钉 SDK 再次验证纯附件等待、生活问答隔离及整批素材入任务，没有外发测试消息。Hermes、ASR、TTS 的启动时间在切换前后完全一致。
 
 `ops/deploy_task_routing.sh` 使用原生状态查询、插件检查和 `reload-plugins`。默认只检查；将已上传的候选目录传入 `TASK_ROUTING_CANDIDATE`，设置 `APPLY_TASK_ROUTING=1` 后，仅写入现有路由入口和两个任务模块。热加载失败会恢复本次代码备份，保留业务数据库和素材，不重启 Hermes、ASR、TTS 或教师接收端。

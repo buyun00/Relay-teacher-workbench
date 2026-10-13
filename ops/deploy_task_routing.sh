@@ -28,7 +28,7 @@ if [ "${APPLY_TASK_ROUTING:-0}" != 1 ]; then
     exit 0
 fi
 
-backup=$(docker exec -i --user hermes -e TASK_ROUTING_CANDIDATE -e HERMES_HOME=/opt/data hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+backup=$(docker exec -i -e TASK_ROUTING_CANDIDATE -e HERMES_HOME=/opt/data hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import importlib.util, os
 root = Path(os.environ['TASK_ROUTING_CANDIDATE'])
@@ -42,10 +42,9 @@ finish() {
     result=$?
     trap - EXIT
     if [ "$result" != 0 ]; then
-        docker exec -i --user hermes -e TASK_ROUTING_BACKUP="$backup" -e HERMES_HOME=/opt/data hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+        docker exec -i -e TASK_ROUTING_BACKUP="$backup" -e HERMES_HOME=/opt/data hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 import os, shutil
-from gateway.control_socket import reload_gateway_plugins
 backup = Path(os.environ['TASK_ROUTING_BACKUP'])
 root = Path('/opt/data/plugins/smart-chat-router')
 for name in ('__init__.py', 'gateway_tasks.py', 'gateway_task_runner.py'):
@@ -54,6 +53,10 @@ for name in ('__init__.py', 'gateway_tasks.py', 'gateway_task_runner.py'):
         shutil.copy2(original, root / name)
     else:
         (root / name).unlink(missing_ok=True)
+PY
+        docker exec -i --user hermes -e HERMES_HOME=/opt/data hermes-agent /opt/hermes/.venv/bin/python - <<'PY'
+from pathlib import Path
+from gateway.control_socket import reload_gateway_plugins
 result = reload_gateway_plugins(Path('/opt/data'), timeout=25)
 print('ROLLBACK_RELOAD', bool(result and result.get('reloaded')))
 PY
@@ -71,7 +74,7 @@ result = reload_gateway_plugins(Path('/opt/data'), timeout=25)
 activation = next((p for p in (result or {}).get('activations', []) if p.get('key') == 'smart-chat-router'), None)
 if not result or not result.get('reloaded') or not activation:
     raise RuntimeError('原生插件热加载未确认')
-if 'pre_gateway_dispatch' not in activation.get('activated_now', {}).get('hooks', []):
+if 'pre_gateway_dispatch' not in activation.get('activated_now', {}).get('gateway_transforms', []):
     raise RuntimeError('钉钉入口钩子未确认')
 print('NATIVE_HOT_RELOAD', {'reloaded': result['reloaded'], 'adapters_rewired': result.get('adapters_rewired'), 'router': activation})
 root = Path('/opt/data/plugins/smart-chat-router')
