@@ -13,7 +13,8 @@ from workbench.gateway_delivery import enable_file_delivery, file_receipt, regis
 class GatewayDeliveryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='fictional-gateway-delivery-')
-        self.root = Path(self.temp.name)
+        # Production delivery resolves paths; normalize the fictional fixture on Windows too.
+        self.root = Path(self.temp.name).resolve()
         (self.root / 'output/nested').mkdir(parents=True)
         self.calls, self.sent, self.cards = [], [], []
         self.state = {'state': 'delivering', 'stage': 'completed', 'gpt_preset': None, 'turn': 'fictional-turn',

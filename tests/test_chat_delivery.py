@@ -19,7 +19,8 @@ from workbench.storage import Store
 class ChatDeliveryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='fictional-delivery-')
-        self.root = Path(self.temp.name)
+        # Hosted Windows TEMP may contain an 8.3 alias; compare canonical file identities.
+        self.root = Path(self.temp.name).resolve()
         self.chats = Chats(Store(Config(self.root / 'store', 'fictional-delivery')))
         for name in ('fictional-a', 'fictional-b'):
             self.chats.create({'id': name})
