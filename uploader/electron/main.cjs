@@ -229,6 +229,9 @@ async function start() {
   });
   client = new ClassroomClient(app.getPath("userData"), {
     version: runtime.version,
+    // Use Chromium for desktop HTTP, as the updater does. Node's bundled
+    // Undici can assert when a peer closes a response while its parser is paused.
+    fetcher: (...args) => net.fetch(...args),
     codec: {
       encrypt(value) {
         if (!safeStorage.isEncryptionAvailable())

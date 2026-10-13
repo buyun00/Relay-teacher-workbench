@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { _electron: electron, expect } = require("@playwright/test");
+const { checkAttachmentDownload } = require("./attachment-download.cjs");
 
 async function checkTitleBar(app, page) {
   await expect(page.getByRole("banner", { name: "窗口标题栏" })).toContainText("课堂连接");
@@ -373,6 +374,7 @@ async function startReceiver(root) {
     await assert.rejects(() => window.evaluate(input => window.classroom.openChatAttachment(input), { id: chatId, attachmentId: image.id }), /无法打开附件.*FICTIONAL_NO_ASSOCIATION/);
     assert.ok(await window.evaluate(input => window.classroom.previewChatAttachment(input), { id: chatId, attachmentId: image.id }));
     assert.deepEqual(await fsp.readFile(path.join(profile, "chat-attachments", image.id, image.filename)), Buffer.from(pastedPNG, "base64"));
+    await checkAttachmentDownload(app, window, profile);
     if (localBuild) {
       assert.equal(state.update.state, "local");
       console.log("Local installer acceptance passed: explicit local version, updates disabled, retained queue and settings.");
