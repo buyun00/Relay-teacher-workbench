@@ -144,3 +144,11 @@ CREATE TABLE IF NOT EXISTS desktop_turn_attachments(
   attachment_id TEXT NOT NULL REFERENCES desktop_chat_attachments(id), position INTEGER NOT NULL,
   PRIMARY KEY(turn_id,attachment_id), UNIQUE(turn_id,position)
 );
+CREATE TABLE IF NOT EXISTS desktop_turn_outputs(
+  turn_id TEXT NOT NULL REFERENCES desktop_turns(id),
+  attachment_id TEXT NOT NULL REFERENCES desktop_chat_attachments(id),
+  source_path TEXT NOT NULL, source_size INTEGER NOT NULL, source_mtime INTEGER NOT NULL,
+  position INTEGER NOT NULL, delivered_at TEXT NOT NULL,
+  PRIMARY KEY(turn_id,attachment_id), UNIQUE(turn_id,position),
+  UNIQUE(turn_id,source_path,source_size,source_mtime)
+);

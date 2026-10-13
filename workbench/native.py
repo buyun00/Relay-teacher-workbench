@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import Config, WorkbenchError
 from .service import Workbench
 from .storage import encode
+from .delivery_policy import DELIVERY_RULE
 
 
 def prop(kind, description="", **extra):
@@ -65,6 +66,7 @@ def register_plugin(ctx, workbench: Workbench | None = None):
     ctx.register_skill("teacher-workbench", skill_path, description="基于当前资料复盘、查询、更正和备课")
     body = skill_path.read_text(encoding="utf-8").split("---", 2)[-1].strip()
     ctx.register_system_prompt_section("teacher-workbench.rules", body, max_chars=4000)
+    ctx.register_system_prompt_section("teacher-workbench.delivery", DELIVERY_RULE, max_chars=2000)
 
     def current(task_id=None, session_id=None):
         with lock:
@@ -104,7 +106,7 @@ def register_plugin(ctx, workbench: Workbench | None = None):
         questions = workbench.query.questions()
         ready = workbench.jobs.list("ready")["jobs"][:3]
         waiting = workbench.jobs.list("waiting_external")["jobs"][:3]
-        return {"context": "教师插件运行上下文（由宿主绑定）：" + encode({"workspace_id": workbench.store.config.workspace_id,
+        return {"context": DELIVERY_RULE + "\n教师插件运行上下文（由宿主绑定）：" + encode({"workspace_id": workbench.store.config.workspace_id,
                 "current_message_id": message["id"], "pending_questions": questions, "ready_jobs": ready, "waiting_jobs": waiting,
                 "pending_recordings": workbench.query.pending_recordings(5)})}
 

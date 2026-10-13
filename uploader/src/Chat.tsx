@@ -121,6 +121,7 @@ export function Chat({ task, snapshot: s, run, disabled = false }: { task?: Loca
             {turn.answer && <div className="markdown-body" aria-label="AI 回复"><Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
               a: ({ href, children }) => <a href={href} onClick={(e) => { e.preventDefault(); if (href && /^https?:\/\//.test(href)) void run(() => bridge.openLink(href)); }}>{children}</a>,
             }}>{turn.answer}</Markdown></div>}
+            {!!turn.outputs?.length && <ChatAttachments chatId={view.chat.id} files={turn.outputs} run={run} label="生成的成品" />}
             {active(turn) && <div className="reply-progress" role="status"><LoaderCircle size={13} className="spin" />
               {turn.state === "cancelling" ? "正在停止…" : turn.state === "queued" ? "等待开始…" : [...view.events].reverse().find((e) => e.turn_id === turn.id && e.kind === "status")?.payload.text || "正在回复…"}
             </div>}

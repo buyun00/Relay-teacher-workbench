@@ -182,7 +182,9 @@ class Chats:
     def _turn(self, db, row):
         from .attachments import public_attachment
         attachments = db.execute("SELECT a.* FROM desktop_turn_attachments t JOIN desktop_chat_attachments a ON a.id=t.attachment_id WHERE t.turn_id=? ORDER BY t.position", (row["id"],))
-        return {**dict(row), "attachments": [public_attachment(a) for a in attachments]}
+        outputs = db.execute("SELECT a.* FROM desktop_turn_outputs t JOIN desktop_chat_attachments a ON a.id=t.attachment_id WHERE t.turn_id=? ORDER BY t.position", (row["id"],))
+        return {**dict(row), "attachments": [public_attachment(a) for a in attachments],
+                "outputs": [public_attachment(a) for a in outputs]}
 
     def select_model(self, chat_id, payload):
         model_id = payload.get("model_id")
@@ -238,7 +240,8 @@ class Chats:
                 state = "cancelled"
             answer = row["answer"] if answer is None else answer
             db.execute("UPDATE desktop_turns SET state=?,answer=?,error=?,updated_at=? WHERE id=?", (state, answer, error, now(), turn_id))
-            self._event(db, row["chat_id"], turn_id, "done", {"state": state, "answer": answer, "error": error})
+            self._event(db, row["chat_id"], turn_id, "done", {"state": state, "answer": answer, "error": error,
+                "outputs": self._turn(db, row)["outputs"]})
 
     def delta(self, turn_id, text):
         with self.store.transaction() as db:

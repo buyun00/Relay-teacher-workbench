@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 
 from .chats import Chats
+from .chat_delivery import ChatDeliveries
+from .delivery_policy import DELIVERY_RULE, attachment_text, collect_outputs, output_snapshot
 from .config import Config
 from .storage import Store, now
 
@@ -227,6 +229,9 @@ def run(chats, turn_id):
             triage_prompt += "本轮参考澄清问题：" + str(proposal["question"])
     workdir = str(Path(cfg.get("terminal", {}).get("cwd") or home / "workspace") / "chats" / chat["id"])
     Path(workdir).mkdir(parents=True, exist_ok=True)
+    output_dir = Path(workdir) / "output"
+    output_dir.mkdir(exist_ok=True)
+    before_outputs = output_snapshot(output_dir)
     os.chdir(workdir)
     toolsets = cfg.get("platform_toolsets", {}).get("cli")
     agent = AIAgent(model=model_id, provider=runtime["provider"], api_key=runtime.get("api_key"),
@@ -234,7 +239,7 @@ def run(chats, turn_id):
         session_id=chat["native_tip"], session_db=native_db, platform="desktop", chat_id=chat["id"],
         quiet_mode=True, enabled_toolsets=toolsets, skip_background_review=True,
         max_iterations=int(cfg.get("agent", {}).get("max_turns", 50)),
-        ephemeral_system_prompt=triage_prompt or None, stream_delta_callback=delta,
+        ephemeral_system_prompt=triage_prompt + "\n" + DELIVERY_RULE + "\n本轮成品目录：" + str(output_dir), stream_delta_callback=delta,
         tool_start_callback=tool_start, tool_complete_callback=tool_end, thinking_callback=thinking,
         interim_assistant_callback=lambda text: emit("commentary", {"text": text}),
         status_callback=lambda text: emit("status", {"text": str(text)}),
@@ -267,7 +272,18 @@ def run(chats, turn_id):
         persisted = native_db.get_messages_as_conversation(agent.session_id, include_row_ids=True)
         if state == "completed" and (not persisted or persisted[-1].get("role") != "assistant"):
             state = "failed"
-        chats.finish(turn_id, state, text, "模型回复未完成，已保存内容，可继续对话。" if state == "failed" else None)
+        error = "模型回复未完成，已保存内容，可继续对话。" if state == "failed" else None
+        if state == "completed" and chats.turn(turn_id)["state"] != "cancelling":
+            try:
+                paths = collect_outputs(text, output_dir, before_outputs, workdir)
+                if paths:
+                    emit("status", {"text": "正在把成品发送到这段对话"})
+                    ChatDeliveries(chats).stage(turn_id, paths)
+                    text = attachment_text(text, paths, workdir)
+            except (OSError, ValueError) as exc:
+                state, error = "failed", "成品附件尚未完整交付：" + str(exc)[:400]
+                text = "成品尚未完整发送到这段对话。已发送的文件和制作记录已保留，可继续处理交付。"
+        chats.finish(turn_id, state, text, error)
         if chats.turn(turn_id)["state"] == "completed" and (proposal is None or proposal.get("ready") is True):
             try:
                 name_chat(chats, chat["id"])

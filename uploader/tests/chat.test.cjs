@@ -20,6 +20,18 @@ test("SSE replay deduplicates deltas, preserves tools, and never crosses convers
   assert.throws(() => applyEvent(view, { ...event(5, "delta", {}), chat_id: "fictional-other" }), /不匹配/);
 });
 
+test("assistant files replay once in their original turn and survive the final snapshot", () => {
+  const view = { chat: { id: "fictional" }, turns: [{ id: "fictional-turn", answer: "", outputs: [] }], events: [], cursor: 0 };
+  const file = { id: "fictional-result", filename: "fictional.mp4", mime: "video/mp4", bytes: 7319 };
+  const event = { seq: 1, kind: "artifact", chat_id: "fictional", turn_id: "fictional-turn", payload: { file } };
+  applyEvent(view, event); applyEvent(view, event);
+  applyEvent(view, { ...event, seq: 2 });
+  assert.deepEqual(view.turns[0].outputs, [file]);
+  applyEvent(view, { ...event, seq: 3, kind: "done", payload: { answer: "虚构成品已附上", state: "completed", outputs: [file] } });
+  assert.deepEqual(view.turns[0].outputs, [file]);
+  assert.throws(() => applyEvent(view, { ...event, seq: 4, chat_id: "fictional-other" }), /不匹配/);
+});
+
 test("a lost acceptance reply retries the same durable message identity, including after client restart", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "fictional-chat-"));
   const db = new QueueDatabase(root);

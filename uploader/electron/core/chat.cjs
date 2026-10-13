@@ -18,6 +18,10 @@ function applyEvent(view, event) {
     if (view.turns.length === 1) view.chat.title = (p.content.trim().split(/\r?\n/)[0] || p.attachments?.[0]?.filename || "新任务").slice(0, 36);
   }
   if (kind === "delta" && turn) turn.answer += p.text;
+  if (kind === "artifact" && turn) {
+    turn.outputs ||= [];
+    if (!turn.outputs.some(file => file.id === p.file.id)) turn.outputs.push(p.file);
+  }
   if (["state", "done", "model"].includes(kind) && turn) Object.assign(turn, p);
   if (["route", "metadata"].includes(kind)) Object.assign(view.chat, p);
   if (["tool_start", "tool_end", "status", "route", "notice", "commentary"].includes(kind)) view.events.push(event);

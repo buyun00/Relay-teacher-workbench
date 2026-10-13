@@ -6,8 +6,8 @@ import type { ChatAttachment } from "./types";
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 const size = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : n >= 1e3 ? (n / 1e3).toFixed(1) + " KB" : n + " B";
 
-export function ChatAttachments({ chatId, files, run, removable = false, disabled = false }: {
-  chatId: string; files: ChatAttachment[]; run: Run; removable?: boolean; disabled?: boolean;
+export function ChatAttachments({ chatId, files, run, removable = false, disabled = false, label }: {
+  chatId: string; files: ChatAttachment[]; run: Run; removable?: boolean; disabled?: boolean; label?: string;
 }) {
   const [preview, setPreview] = useState<{ src: string; file: ChatAttachment } | null>(null);
   useEffect(() => {
@@ -16,7 +16,7 @@ export function ChatAttachments({ chatId, files, run, removable = false, disable
     document.addEventListener("keydown", close); return () => document.removeEventListener("keydown", close);
   }, [preview]);
   return <>
-    <div className="chat-attachments" aria-label={removable ? "待发送附件" : "消息附件"}>
+    <div className="chat-attachments" aria-label={label || (removable ? "待发送附件" : "消息附件")}>
       {files.map(file => <Attachment key={file.id} chatId={chatId} file={file} removable={removable} disabled={disabled} run={run}
         preview={() => void run(async () => {
           const src = await bridge.previewChatAttachment({ id: chatId, attachmentId: file.id, full: true });

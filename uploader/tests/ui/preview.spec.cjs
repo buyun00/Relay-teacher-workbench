@@ -1,5 +1,42 @@
 const { test, expect } = require("@playwright/test");
 
+test("generated files appear inside the assistant reply and save from that same conversation", async ({ page }) => {
+  await page.addInitScript(() => {
+    const stamp = '2026-10-13T00:00:00Z';
+    const task = { id: 'fictional-result-chat', title: '虚构成品验收', draft: '', createdAt: stamp, updatedAt: stamp };
+    const files = [
+      { id: 'fictional-result-image', filename: 'fictional-generated.png', mime: 'image/png', bytes: 7319 },
+      { id: 'fictional-result-video', filename: 'fictional-generated.mp4', mime: 'video/mp4', bytes: 7319 },
+    ];
+    window.fictionalSaves = [];
+    const snapshot = { mode: 'preview', version: '0.1.0', tasks: [task], chatModels: [], deviceState: 'ready',
+      config: { endpoint: '', workspaceId: 'fictional-delivery', devices: [], pauseUploads: false, hasToken: false },
+      dataDir: 'FICTIONAL DATA ONLY', devices: [], candidates: [], files: [], copying: null, scanning: false,
+      connection: { state: 'online', detail: '虚构连接', checkedAt: stamp }, update: { state: 'local', detail: '虚构本地包' }, logs: [] };
+    const view = { chat: { id: task.id, title: task.title, route_state: 'locked', model_id: null },
+      turns: [{ id: 'fictional-result-turn', chat_id: task.id, content: '制作虚构文件', answer: '成品已附在这条回复中。',
+        state: 'completed', error: null, created_at: stamp, attachments: [], outputs: files }], events: [], cursor: 1, workspace_id: 'fictional-delivery' };
+    window.classroom = {
+      runtimeReady: async () => {},
+      snapshot: async () => snapshot, subscribe: () => () => {}, readChat: async () => view, subscribeChat: () => () => {},
+      previewChatAttachment: async () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aB8sAAAAASUVORK5CYII=',
+      saveChatAttachment: async input => { window.fictionalSaves.push(input); },
+    };
+  });
+  await page.goto('http://127.0.0.1:5178');
+  const results = page.getByLabel('生成的成品');
+  await expect(results.locator('.chat-attachment')).toHaveCount(2);
+  await expect(page.locator('.assistant-message')).toContainText('fictional-generated.mp4');
+  await expect(page.locator('.user-message .chat-attachment')).toHaveCount(0);
+  await results.getByRole('button', { name: '预览图片：fictional-generated.png' }).click();
+  await expect(page.getByRole('dialog', { name: '图片预览：fictional-generated.png' })).toBeVisible();
+  await page.getByRole('button', { name: '关闭图片预览' }).click();
+  await results.getByRole('button', { name: '保存附件：fictional-generated.mp4' }).click();
+  await expect.poll(() => page.evaluate(() => window.fictionalSaves)).toEqual([
+    { id: 'fictional-result-chat', attachmentId: 'fictional-result-video' },
+  ]);
+});
+
 test("integrated title bar and workspace fit normal and minimum window sizes", async ({ page }) => {
   await page.goto("http://127.0.0.1:5178");
   for (const size of [{ width: 1280, height: 860 }, { width: 980, height: 680 }]) {
