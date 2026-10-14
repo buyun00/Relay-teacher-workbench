@@ -89,7 +89,7 @@ class Transport {
         409: "接收端进度发生变化，将核对后续传",
       };
       throw new TransferError(
-        (route === "/v1/organization" && typeof body.error === "string" ? body.error : messages[response.status]) ||
+        (["/v1/organization", "/v1/question-bank"].includes(route) && typeof body.error === "string" ? body.error : messages[response.status]) ||
           "接收端请求失败（" + response.status + "）",
         retryable,
       );

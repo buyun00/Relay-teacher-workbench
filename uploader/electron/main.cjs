@@ -113,6 +113,22 @@ function handlers() {
       return fn(input);
     });
   handle("snapshot", () => client.snapshot());
+  handle("question-bank", (input) => client.transport.request("/v1/question-bank", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, workspace_id: client.config().workspaceId }),
+  }));
+  handle("question-save", async (input) => {
+    const paper = await client.transport.request("/v1/question-bank", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({action: "preview", paper_id: input.paper_id, workspace_id: client.config().workspaceId}),
+    });
+    if (paper.stale) throw new Error("此作业依据已更新，请重新组卷后导出");
+    const teacher = input.teacher === true;
+    const result = await dialog.showSaveDialog(window, {title: "导出作业草稿", defaultPath: "练习-" + (teacher ? "教师版" : "学生版") + ".html", filters: [{name: "可打印网页", extensions: ["html"]}]});
+    if (result.canceled || !result.filePath) return {saved: false};
+    await fs.writeFile(result.filePath, teacher ? paper.teacher_html : paper.student_html, "utf8");
+    return {saved: true};
+  });
   handle("organization", () => client.transport.request("/v1/organization"));
   handle("organize", (input) => client.transport.request("/v1/organization", {
     method: "POST", headers: { "Content-Type": "application/json" },

@@ -328,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = ingress.open(self.payload())
             elif self.command == "POST" and parsed.path == "/v1/status":
                 result = ingress.statuses(self.payload())
+            elif parsed.path == "/v1/question-bank" and self.command == "POST":
+                from .question_desktop import command
+                result = command(ingress.store, self.chat_payload())
             elif parsed.path == "/v1/organization" and self.command in {"GET", "POST"}:
                 from .organization import Organization
                 organization = Organization(ingress.store)

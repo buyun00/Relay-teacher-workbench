@@ -31,6 +31,10 @@ def seed(root):
         {"title":"虚构学生回答","detail":"匿名学生回应教师。","question":"这句话是哪位学生说的？","sources":[refs[0][1]]},
         {"title":"后续虚构原文","detail":"同一课堂后续片段。","sources":refs[1]},
     ]}])
+    from workbench.question_bank import QuestionBank
+    source=Path(root)/'fictional-questions.json'
+    source.write_text(json.dumps({'items':[{'stem':'虚构端到端：1+1 等于多少？','answer':'2','analysis':'加法。','tags':['虚构运算'],'kind':'填空题'}]},ensure_ascii=False),encoding='utf-8')
+    QuestionBank(w.store).import_file(str(source),expected_count=1)
     print(json.dumps({"fictional":True,"activities":1}))
 
 

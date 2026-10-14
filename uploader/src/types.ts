@@ -152,6 +152,8 @@ export interface OrganizationData {
   schedule: ScheduleEntry[]; activities: RecordingActivity[];
 }
 export interface ClientAPI {
+  questionBank(input: Record<string, unknown>): Promise<any>;
+  saveQuestionPaper(input: {paper_id: string; teacher: boolean}): Promise<{saved: boolean}>;
   organization(): Promise<OrganizationData>;
   organize(input: Record<string, unknown>): Promise<unknown>;
   runtimeReady(): Promise<unknown>;

@@ -26,6 +26,9 @@ class Workbench:
         a = dict(args)
         action = a.pop("action", None)
         context = context or {}
+        if tool == "teacher_question_bank":
+            from .question_bank import QuestionBank
+            return QuestionBank(self.store).invoke(action, **a)
         if tool == "teacher_organize":
             from .organization import Organization
             organization = Organization(self.store)

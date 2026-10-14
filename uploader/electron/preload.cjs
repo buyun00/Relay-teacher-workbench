@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("classroom", {
   runtimeReady: () => ipcRenderer.invoke("client:runtime-ready"),
   snapshot: () => ipcRenderer.invoke("client:snapshot"),
   organization: () => ipcRenderer.invoke("client:organization"),
+  questionBank: (input) => ipcRenderer.invoke("client:question-bank", input),
+  saveQuestionPaper: (input) => ipcRenderer.invoke("client:question-save", input),
   organize: (input) => ipcRenderer.invoke("client:organize", input),
   saveSettings: (input) => ipcRenderer.invoke("client:settings", input),
   selectFolder: () => ipcRenderer.invoke("client:select-folder"),

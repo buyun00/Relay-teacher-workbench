@@ -27,6 +27,20 @@ def schema(name, description, properties, required=()):
 
 
 SCHEMAS = [
+    schema("teacher_question_bank", "服务端 SQLite 题库：导入 DOCX/标准 JSON，查题、版本修订、派生改编、个人作业快照和作答记录。先 read 获取当前版本；修改保留原文，compose 不发布作业。review_status 不是模型自证正确。", {
+        "action": prop("string", enum=["import", "batches", "search", "read", "revise", "adapt", "compose", "paper", "attempt"]),
+        "path": prop("string"), "title": prop("string"), "tags": prop("array", items=prop("string")),
+        "expected_count": prop("integer"), "query": prop("string"), "kind": prop("string"),
+        "batch_id": prop("string"), "limit": prop("integer"), "offset": prop("integer"),
+        "item_id": prop("string"), "revision": prop("integer"), "expected_revision": prop("integer"),
+        "changes": prop("object"), "reason": prop("string"), "purpose": prop("string"),
+        "student_id": prop("string"), "evidence": SOURCES,
+        "selections": prop("array", items=prop("object", properties={
+            "item_id": prop("string"), "revision": prop("integer"), "task": prop("object")
+        }, required=["item_id", "revision"], additionalProperties=False)),
+        "paper_id": prop("string"), "position": prop("integer"), "response": prop("string"),
+        "assistance": prop("object"), "assessment": prop("object")
+    }, ["action"]),
     schema("teacher_organize", "按录音内容跨文件整理活动草稿。不能推定学生实名；教师确认后才入库。先 context 读取当前草稿和原文版本，propose 必须保留全部有效内容，仅少量歧义片段设置 question。", {
         "action": prop("string", enum=["context", "propose"]),
         "asset_id": prop("string", "context 时指定录音，仅加载当日相邻录音"),

@@ -10,12 +10,13 @@ import { Chat } from "./Chat";
 import { WindowTitleBar } from "./WindowTitleBar";
 import { UpdateBanner } from "./UpdateBanner";
 import { RecordingWorkspace } from "./RecordingWorkspace";
+import { QuestionBank } from "./QuestionBank";
 
 type Run = (action: () => Promise<unknown>, success?: string) => Promise<void>;
 
 export function App() {
   const [s, setSnapshot] = useState<Snapshot | null>(null);
-  const [page, setPage] = useState<"chat" | "uploads" | "review" | "history" | "schedule">("chat");
+  const [page, setPage] = useState<"chat" | "uploads" | "review" | "history" | "schedule" | "questions">("chat");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -119,6 +120,10 @@ export function App() {
           <span className="recording-feature-title">录音整理<ArrowRight size={17} /></span>
           <span className="recording-feature-description">上传、整理与入库</span>
         </button>
+        <button className={"recording-feature-card " + (page === "questions" ? "selected" : "")} aria-current={page === "questions" ? "page" : undefined} onClick={() => setPage("questions")}>
+          <span className="recording-feature-title">题库与作业<ArrowRight size={17} /></span>
+          <span className="recording-feature-description">浏览、改编与个性化组卷</span>
+        </button>
         <div className="sidebar-footer">
           <button className={"sidebar-link archive-toggle " + (showArchived ? "selected" : "")} aria-label={showArchived ? "返回对话" : "已归档对话"}
             onClick={() => { setShowArchived(!showArchived); setTaskId(null); setPage("chat"); }}>
@@ -134,7 +139,7 @@ export function App() {
       <main className="main-pane">
         {page === "chat" ? (
           <Chat key={task?.id || "empty"} task={task} snapshot={s} run={run} disabled={creating} />
-        ) : (
+        ) : page === "questions" ? <QuestionBank /> : (
           <RecordingWorkspace snapshot={s} run={run} page={page} navigate={setPage} openSettings={() => setSettings(true)}
             uploadButton={<button className="button primary" disabled={adding || s.scanning || !!s.copying} onClick={() => void addFiles()}>
               {adding ? <LoaderCircle size={16} className="spin" /> : <UploadCloud size={16} />}

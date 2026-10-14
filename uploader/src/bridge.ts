@@ -1,5 +1,6 @@
 import type { ChatAttachment, ChatView, ClientAPI, Recording, Snapshot } from "./types";
 import { organizationPreview } from "./organizationPreview";
+import { questionPreview } from "./questionPreview";
 
 function browserPreview(): ClientAPI {
   const organization = organizationPreview();
@@ -153,6 +154,8 @@ function browserPreview(): ClientAPI {
   };
   return {
     ...organization,
+    questionBank: questionPreview(),
+    async saveQuestionPaper() { throw new Error('浏览器虚构预览不导出文件，请使用桌面端'); },
     runtimeReady: async () => {},
     snapshot: async () => structuredClone(state),
     subscribe(fn) {
