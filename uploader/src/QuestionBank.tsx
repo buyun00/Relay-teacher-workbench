@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "./bridge";
 import "./questions.css";
+import { mathPreview, answerCheckNames } from "./questionMath";
 
 type Row = { id: string; revision: number; stem: string; review_status: string; kind: string; tags: string[] };
-type Detail = { id: string; revision: number; parent_id?: string; body: Record<string, any>; history: {revision: number; reason: string}[] };
+type Detail = { id: string; revision: number; parent_id?: string; original?: Record<string, any>; body: Record<string, any>; history: {revision: number; reason: string}[] };
 type Selection = {item_id: string; revision: number; stem: string; task: {instruction: string; hint: string; reason: string}};
 const status: Record<string, string> = { unreviewed: "未审核", reviewed: "已审核", needs_attention: "待核对" };
 function Frame({content, title}: {content: string; title: string}) {
@@ -14,6 +15,7 @@ export function QuestionBank() {
   const [catalog, setCatalog] = useState<any>({batches: [], students: [], papers: [], tags: [], kinds: []});
   const [rows, setRows] = useState<Row[]>([]), [total, setTotal] = useState(0), [offset, setOffset] = useState(0);
   const [query, setQuery] = useState(''), [batch, setBatch] = useState(''), [tag, setTag] = useState(''), [kind, setKind] = useState(''), [review, setReview] = useState('');
+  const [showOriginal, setShowOriginal] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null), [answer, setAnswer] = useState(false);
   const [selected, setSelected] = useState<Selection[]>([]), [tab, setTab] = useState<'bank'|'compose'|'papers'>('bank');
   const [title, setTitle] = useState('个性化练习'), [purpose, setPurpose] = useState(''), [student, setStudent] = useState('');
@@ -35,7 +37,7 @@ export function QuestionBank() {
     return () => { clearTimeout(timer); ++request.current; };
   }, [query,batch,tag,kind,review,offset,refreshKey]);
   const read = async (id: string, revision?: number) => {
-    const seq = ++reading.current; setDetail(null); setEdit(null); setAnswer(false);
+    const seq = ++reading.current; setDetail(null); setEdit(null); setAnswer(false); setShowOriginal(false);
     const value = await call({action:'read',item_id:id,...(revision?{revision}:{})});
     if(seq===reading.current) setDetail(value);
   };
@@ -64,11 +66,13 @@ export function QuestionBank() {
         {!detail?<p className="qb-empty">选择一道题，查看原题、解析和修订记录</p>:<>
           <div className="qb-actions"><span className={'qb-badge '+detail.body.review_status}>{status[detail.body.review_status]}</span><span>v{detail.revision}{detail.parent_id?' · 改编题':''}</span><button className="button primary" onClick={()=>add(detail)}>加入选题篮</button></div>
           {!!detail.body.warnings?.length&&<div className="qb-error">此题需要核对：{detail.body.warnings.map((w:any)=>typeof w==='string'?w:JSON.stringify(w)).join('；')}</div>}
+          {detail.body.answer_check&&<div className={detail.body.answer_check.status==='consistent'?'qb-notice':'qb-error'}><strong>{answerCheckNames[detail.body.answer_check.status]||'待核对'}</strong><p>{detail.body.answer_check.reason}</p>{detail.body.answer_check.suggested_answer&&<details><summary>建议答案与独立推导（教师可见）</summary><Frame title="答案核对依据" content={mathPreview(detail.body.answer_check.suggested_answer+'\n'+(detail.body.answer_check.solution||''))}/></details>}</div>}
+          {detail.original&&<><button className="button" onClick={()=>setShowOriginal(!showOriginal)}>{showOriginal?'收起原图对照':'查看清洗前原图对照'}</button>{showOriginal&&<><Frame title="原始题干及选项" content={detail.original.stem_html||escape(detail.original.stem)}/><Frame title="原始答案与解析" content={(detail.original.answer_html||escape(detail.original.answer))+(detail.original.analysis_html||escape(detail.original.analysis))}/></>}</>}
           <Frame title="题干预览" content={detail.body.stem_html||'<p>'+escape(detail.body.stem)+'</p>'}/>
           <button className="button" onClick={()=>setAnswer(!answer)}>{answer?'收起答案解析':'查看答案解析'}</button>
           {answer&&<Frame title="答案解析" content={'<h3>答案</h3>'+(detail.body.answer_html||escape(detail.body.answer))+'<h3>解析</h3>'+(detail.body.analysis_html||escape(detail.body.analysis))}/>}
-          <div className="qb-actions"><button className="button" disabled={busy} onClick={()=>{setEdit({stem:detail.body.stem,answer:detail.body.answer,analysis:detail.body.analysis});setReason('');}}>改编此题</button><button className="button" disabled={busy} onClick={()=>void run(async()=>{const updated=await call({action:'revise',item_id:detail.id,expected_revision:detail.revision,changes:{review_status:'reviewed'},reason:'教师在题库页面核对题干、题图、答案与解析后确认'});setDetail(updated);setRows(rows.map(r=>r.id===updated.id?{...r,revision:updated.revision,review_status:updated.body.review_status}:r));setNotice('审核已保存；已选旧版本需要重新选入。');})}>确认已核对</button></div>
-          {edit&&<form className="qb-edit" onSubmit={e=>{e.preventDefault();void run(async()=>{const changes=Object.fromEntries(Object.entries(edit).filter(([k,v])=>v!==detail.body[k]));const d=await call({action:'adapt',item_id:detail.id,expected_revision:detail.revision,changes,reason});setDetail(d);setEdit(null);setNotice('改编题已保存，原题保留；可加入选题篮。');});}}><h3>另存为改编题</h3><p>只修改需要变动的文字。修改某一部分会用文字替换该部分的原有公式排版或图片，请保存后核对。</p>{[['stem','题干'],['answer','答案'],['analysis','解析']].map(([k,label])=><label key={k}>{label}<textarea aria-label={label} required={k==='stem'} value={edit[k]} onChange={e=>setEdit({...edit,[k]:e.target.value})}/></label>)}<label>改编原因<input aria-label="改编原因" required value={reason} onChange={e=>setReason(e.target.value)}/></label><button className="button primary" disabled={busy}>保存改编题</button><button className="button" type="button" onClick={()=>setEdit(null)}>取消</button></form>}
+          <div className="qb-actions"><button className="button" disabled={busy} onClick={()=>{setEdit({stem:detail.body.stem,answer:detail.body.answer,analysis:detail.body.analysis,...Object.fromEntries((detail.body.options||[]).map((o:any)=>['option_'+o.label,o.text]))});setReason('');}}>改编此题</button><button className="button" disabled={busy} onClick={()=>void run(async()=>{const updated=await call({action:'revise',item_id:detail.id,expected_revision:detail.revision,changes:{review_status:'reviewed'},reason:'教师在题库页面核对题干、题图、答案与解析后确认'});setDetail(updated);setRows(rows.map(r=>r.id===updated.id?{...r,revision:updated.revision,review_status:updated.body.review_status}:r));setNotice('审核已保存；已选旧版本需要重新选入。');})}>确认已核对</button></div>
+          {edit&&<form className="qb-edit" onSubmit={e=>{e.preventDefault();void run(async()=>{const changes:Record<string,unknown>=Object.fromEntries(Object.entries(edit).filter(([k,v])=>!k.startsWith('option_')&&v!==detail.body[k])); const options=(detail.body.options||[]).map((o:any)=>({...o,text:edit['option_'+o.label]})); if(JSON.stringify(options)!==JSON.stringify(detail.body.options||[]))changes.options=options;const d=await call({action:'adapt',item_id:detail.id,expected_revision:detail.revision,changes,reason});setDetail(d);setEdit(null);setNotice('改编题已保存，原题保留；可加入选题篮。');});}}><h3>另存为改编题</h3><p>{'数学公式使用 $...$，如 $x^2$、$\\frac{1}{2}$。下方实时预览；修改后原答案核对结果会失效。'}</p>{[['stem','题干'],...(detail.body.options||[]).map((o:any)=>['option_'+o.label,'选项 '+o.label]),['answer','答案'],['analysis','解析']].map(([k,label])=><label key={k}>{label}<textarea aria-label={label} required={k==='stem'} value={edit[k]} onChange={e=>setEdit({...edit,[k]:e.target.value})}/></label>)}<details open><summary>编辑内容实时预览</summary><Frame title="改编实时预览" content={Object.entries(edit).map(([k,v])=>'<h3>'+({stem:'题干',answer:'答案',analysis:'解析'}[k]||k.replace('option_','选项 '))+'</h3>'+mathPreview(v)).join('')}/></details><label>改编原因<input aria-label="改编原因" required value={reason} onChange={e=>setReason(e.target.value)}/></label><button className="button primary" disabled={busy}>保存改编题</button><button className="button" type="button" onClick={()=>setEdit(null)}>取消</button></form>}
           <details><summary>修订历史与来源</summary><pre>{JSON.stringify(detail.body.source||{},null,2)}</pre>{detail.history.map(h=><button key={h.revision} disabled={busy} onClick={()=>void run(()=>read(detail.id,h.revision))}>v{h.revision} · {h.reason||'原始导入'}</button>)}</details>
         </>}
       </section></div>

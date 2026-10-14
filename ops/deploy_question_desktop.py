@@ -24,10 +24,12 @@ if 'parsed.path == "/v1/question-bank"' not in source:
     assert source.count(anchor)==1
     source=source.replace(anchor,'            elif parsed.path == "/v1/question-bank" and self.command == "POST":\n                from .question_desktop import command\n                result = command(ingress.store, self.chat_payload())\n'+anchor)
 compile(source,'ingress.py','exec')
-for name in ('question_bank.py','question_desktop.py'):
-    body=(stage/name).read_text(); compile(body,name,'exec')
-    if (target/'workbench'/name).exists(): shutil.copy2(target/'workbench'/name,backup/name)
-    shutil.copy2(stage/name,target/'workbench'/name)
+for name in ('question_bank.py','question_desktop.py','question_html.py','question_latex.py','question_latex.cjs','vendor/katex.cjs','vendor/katex-LICENSE.txt'):
+    if name.endswith('.py'): compile((stage/name).read_text(),name,'exec')
+    dest=target/'workbench'/name;saved=backup/name
+    dest.parent.mkdir(parents=True,exist_ok=True);saved.parent.mkdir(parents=True,exist_ok=True)
+    if dest.exists(): shutil.copy2(dest,saved)
+    shutil.copy2(stage/name,dest)
 shutil.copy2(target/'workbench/ingress.py',backup/'ingress.py')
 (target/'workbench/ingress.py').write_text(source)
 print('Patched bank desktop API. Backup:',backup)

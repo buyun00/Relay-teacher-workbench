@@ -33,7 +33,7 @@ def seed(root):
     ]}])
     from workbench.question_bank import QuestionBank
     source=Path(root)/'fictional-questions.json'
-    source.write_text(json.dumps({'items':[{'stem':'虚构端到端：1+1 等于多少？','answer':'2','analysis':'加法。','tags':['虚构运算'],'kind':'填空题'}]},ensure_ascii=False),encoding='utf-8')
+    source.write_text(json.dumps({'items':[{'format':'latex','stem':'虚构端到端：1+1 等于多少？（$1+1$）','answer':'$2$','analysis':'加法。','tags':['虚构运算'],'kind':'填空题'}]},ensure_ascii=False),encoding='utf-8')
     QuestionBank(w.store).import_file(str(source),expected_count=1)
     print(json.dumps({"fictional":True,"activities":1}))
 

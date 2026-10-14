@@ -12,8 +12,11 @@ test('browse, warning filters, adaptation and personalized draft with answer sep
   await expect(page.frameLocator('iframe[title="题干预览"]').locator('math')).toHaveCount(2);
   await page.getByRole('button',{name:'改编此题',exact:true}).click();
   await page.getByLabel('题干',{exact:true}).fill('虚构改编：x = 2 是 x² = 4 的什么条件？');
+  await page.getByLabel('选项 A',{exact:true}).fill('充分而不必要条件，反例为 $x=-2$');
+  await expect(page.frameLocator('iframe[title="改编实时预览"]').locator('math')).toHaveCount(1);
   await page.getByLabel('改编原因').fill('虚构学生的双向判断练习');
   await page.getByRole('button',{name:'保存改编题'}).click();
+  await expect(page.getByText('内容已修改，需重新核对',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'加入选题篮'}).click();
   await page.getByRole('button',{name:'选题篮 · 1'}).click();
   await page.getByLabel('学生',{exact:true}).selectOption('fictional-student');

@@ -2,8 +2,8 @@
 from html import escape
 from html.parser import HTMLParser
 
-TAGS=set('p div span br table tbody thead tr td th b strong i em u sup sub ul ol li math mi mn mo mrow msup msub msubsup mfrac msqrt mroot mtable mtr mtd munder mover munderover mfenced mspace mtext menclose mpadded mstyle img'.split())
-ATTRS=set('colspan rowspan width height display stretchy fence separator mathvariant mathsize notation lspace rspace accent accentunder open close separators'.split())
+TAGS=set('p div span br table tbody thead tr td th b strong i em u sup sub ul ol li math semantics annotation mi mn mo mrow msup msub msubsup mfrac msqrt mroot mtable mtr mtd munder mover munderover mfenced mspace mtext menclose mpadded mstyle mphantom mmultiscripts mprescripts none img'.split())
+ATTRS=set('colspan rowspan width height display stretchy fence separator mathvariant mathsize notation lspace rspace accent accentunder open close separators encoding columnalign rowalign columnspacing rowspacing columnlines rowlines scriptlevel displaystyle linethickness minsize maxsize voffset depth'.split())
 
 class SafeHTML(HTMLParser):
     def __init__(self):

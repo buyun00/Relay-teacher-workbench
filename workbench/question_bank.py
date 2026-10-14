@@ -38,6 +38,14 @@ class QuestionBank:
         if not isinstance(value.get('tags', []), list) or any(not isinstance(x, str) for x in value.get('tags', [])):
             raise WorkbenchError('标签必须是文本数组')
         value.setdefault('tags', [])
+        if 'options' in value:
+            options=value['options']
+            if not isinstance(options,list) or any(not isinstance(o,dict) or not isinstance(o.get('text'),str) or not isinstance(o.get('label'),str) or o.get('label') not in 'ABCDEFGH' or len(o.get('label',''))!=1 for o in options):
+                raise WorkbenchError('选项必须包含 A-H 标签和文本')
+            if len({o['label'] for o in options})!=len(options): raise WorkbenchError('选项标签不能重复')
+        if value.get('format')=='latex':
+            from .question_latex import apply_rendered
+            apply_rendered(value)
         for key in ('stem_html','answer_html','analysis_html'):
             if key in value:
                 if not isinstance(value[key],str): raise WorkbenchError('题目 HTML 必须是文本')
@@ -113,7 +121,7 @@ class QuestionBank:
                 body = json.loads(row['body'])
                 if review_status and body['review_status'] != review_status:
                     continue
-                haystack = '\n'.join([body['stem'], body['answer'], body['analysis'], *body['tags']])
+                haystack = '\n'.join([body['stem'], body['answer'], body['analysis'], *body['tags'], *[o['text'] for o in body.get('options',[])]])
                 if query.casefold() not in haystack.casefold() or (kind and body['kind'] != kind):
                     continue
                 if not set(tags or []).issubset(body['tags']):
@@ -130,12 +138,15 @@ class QuestionBank:
             current = self._read(db, item_id)
             if current['revision'] != expected_revision:
                 raise WorkbenchError('题目版本已变化，请重新读取')
-            body = self.body({**current['body'], **changes})
+            merged={**current['body'], **changes}
+            if any(k in changes for k in ('stem','options','answer','analysis','figures','format','stem_html','answer_html','analysis_html')) and 'answer_check' not in changes:
+                merged['answer_check']={'status':'stale','reason':'题目内容已修改，需要重新核对答案'}
+            body = self.body(merged)
             # A content edit never inherits the previous quality assertion.
-            if any(k in changes for k in ('stem','answer','analysis','stem_html','answer_html','analysis_html')):
-                body['review_status'] = 'unreviewed'
+            if any(k in changes for k in ('stem','options','answer','analysis','figures','format','stem_html','answer_html','analysis_html')):
+                body['review_status'] = 'needs_attention' if changes.get('review_status')=='needs_attention' else 'unreviewed'
             for plain in ('stem','answer','analysis'):
-                if plain in changes and plain + '_html' not in changes:
+                if body.get('format')!='latex' and plain in changes and plain + '_html' not in changes:
                     body.pop(plain + '_html', None)
             revision = expected_revision + 1
             db.execute('INSERT INTO qb_revisions VALUES(?,?,?,?,?)', (item_id,revision,encode(body),reason,now()))
@@ -153,9 +164,12 @@ class QuestionBank:
             source = self._read(db,item_id)
             if source['revision'] != expected_revision:
                 raise WorkbenchError('原题版本已变化')
-            body = self.body({**source['body'], **changes, 'review_status':'unreviewed'})
+            merged={**source['body'], **changes, 'review_status':'unreviewed'}
+            if any(k in changes for k in ('stem','options','answer','analysis','figures','format','stem_html','answer_html','analysis_html')):
+                merged['answer_check']={'status':'stale','reason':'改编题内容已变化，需要重新核对答案'}
+            body = self.body(merged)
             for plain in ('stem','answer','analysis'):
-                if plain in changes and plain + '_html' not in changes:
+                if body.get('format')!='latex' and plain in changes and plain + '_html' not in changes:
                     body.pop(plain + '_html',None)
             iid = identifier('qi')
             db.execute('INSERT INTO qb_items VALUES(?,?,?,?,?,?)',(iid,1,item_id,expected_revision,now(),now()))
@@ -223,6 +237,12 @@ class QuestionBank:
                     blocks.append(f'<h3>{label}</h3>'+body.get(key+'_html',f'<p>{e(body.get(key,""))}</p>'))
                 blocks.append(f'<p class="meta">来源 {e(item["item_id"])} / v{item["revision"]}；{e(body["review_status"])}</p>')
                 if task.get('reason'): blocks.append(f'<p>安排依据：{e(str(task["reason"]))}</p>')
+                if body.get('warnings'):
+                    blocks.append('<h3>待核对事项</h3><ul>'+''.join('<li>'+e(str(w))+'</li>' for w in body['warnings'])+'</ul>')
+                check=body.get('answer_check')
+                if check:
+                    labels={'consistent':'机器核对一致，未经人工审核','mismatch':'答案或解析存在冲突','uncertain':'答案核对不确定','insufficient':'条件不足，无法核对','stale':'改编后需重新核对'}
+                    blocks.append('<p>答案核对：'+e(labels.get(check.get('status'),'尚未核对'))+'。'+e(check.get('reason',''))+'</p>')
             else: blocks.append('<div class="space"></div>')
             blocks.append('</section>')
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+e(manifest['title'])+'</title><style>body{max-width:850px;margin:32px auto;font:17px/1.8 system-ui;padding:24px}section{border-top:1px solid #bbb;padding:16px 0}img{max-width:100%}table{border-collapse:collapse}td{padding:6px;border:1px solid #ccc}.space{height:100px}.meta{font-size:12px;color:#666}p{white-space:pre-wrap}math{font-size:1.15em}@media print{body{margin:0;padding:0}section{break-inside:avoid}}</style><h1>'+e(manifest['title'])+'</h1><p>'+('教师版' if teacher else '学生版')+'</p>'+''.join(blocks)+'</html>'

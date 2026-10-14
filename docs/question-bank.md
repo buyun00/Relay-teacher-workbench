@@ -12,6 +12,16 @@ Electron 主进程复用现有凭据访问 `POST /v1/question-bank`，渲染进�
 
 ## 原生工具
 
+### 图片清洗与答案核对
+
+规范化题目使用 `format: latex`，`stem`、结构化 `options[{label,text}]`、`answer`、`analysis` 保存文字与 `$LaTeX$`。服务器使用随插件附带的 KaTeX 0.19（MIT 许可证）和 Node 离线生成 MathML，客户端编辑时实时预览。无效公式不能作为正常编辑保存。图形保存在 `figures`，通过 `[[figure:id]]` 引用；图中可识别文字另外转写，示意图本身不伪装成文字。
+
+清洗脚本先恢复原网页的 TeX，再处理只有图片的内容。透明底图片仅在识别输入中铺白底，原图不变。原始版本通过 `cleaning.source_item_id/source_revision` 对照读取；识别输出、每步输入与结果留在服务器运行目录，真实材料不提交 Git。缺图、无法辨认和公式语法问题明确标注，禁止用猜测补全。
+
+答案验证分为不含原答案/解析的独立求解，以及与原答案和解析的比较。独立求解只提供题干与选项中的图，不能看到解析图。`answer_check` 区分机器一致、冲突、不确定、条件不足、修改后失效；机器一致不等于人工审核。原答案不被核对模型覆盖，建议答案与推导独立保存。改动题干、选项、答案或解析后必须重新核对，旧草稿仍按原版本失效。教师版导出包含待核对事项。
+
+脚本顺序：`prepare_question_cleaning.py` → `run_question_recognition.py ... ocr` → `assemble_question_cleaning.py` → `... solve` → 再次 assemble → `... compare`。只有完整覆盖候选数量、来源版本未变化时，`apply_question_cleaning.py ... apply` 才写入版本；先用 snapshot 保存一致的 SQLite 备份及来源版本。中断可恢复，已修改的教师内容不会被覆盖。具体完成数量和核对结论以每次运行的验收报告为准。
+
 `teacher_question_bank` 由插件原生注册，参数中的 `action` 支持：
 
 | action | 作用 |

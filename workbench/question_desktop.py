@@ -23,6 +23,13 @@ def command(store, payload):
         paper = bank.paper(args['paper_id'])
         return {**paper, 'student_html': Path(paper['files']['student.html']).read_text(encoding='utf-8'),
                 'teacher_html': Path(paper['files']['teacher.html']).read_text(encoding='utf-8')}
+    if action == 'read':
+        result=bank.read(**args)
+        cleaning=result['body'].get('cleaning')
+        if cleaning:
+            original=bank.read(cleaning.get('source_item_id',result['id']),cleaning['source_revision'])
+            result['original']=original['body']
+        return result
     if action not in {'search', 'read', 'adapt', 'revise', 'compose', 'paper'}:
         raise WorkbenchError('未知题库页面操作')
     return bank.invoke(action, **args)
